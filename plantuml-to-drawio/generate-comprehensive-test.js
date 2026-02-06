@@ -1,0 +1,211 @@
+/**
+ * Generate a comprehensive test .drawio file that exercises every
+ * supported PlantUML sequence diagram feature systematically.
+ */
+
+import { convert } from './PlantUmlImporter.js';
+import { writeFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const plantUml = `@startuml
+title Comprehensive Feature Test
+
+' ── All 8 participant types ──
+participant Alice
+actor Bob
+boundary FrontEnd
+control Controller
+entity UserEntity
+queue MessageQueue
+database DB
+collections LogList
+
+' ── Participant with alias and ordering ──
+participant "Long Display Name" as LDN
+
+' ── Box grouping ──
+box "Internal Services" #LightBlue
+  participant SvcA
+  participant SvcB
+end box
+
+' ── Basic arrow types ──
+Alice -> Bob : solid sync (->)
+Alice --> Bob : dotted return (-->)
+Alice ->> Bob : async (->>)
+Alice -->> Bob : dotted async (-->>)
+
+' ── Reverse arrows ──
+Alice <- Bob : reverse (<-)
+Alice <-- Bob : reverse dotted (<--)
+
+' ── Bidirectional ──
+Alice <-> Bob : bidirectional (<->)
+
+' ── Cross and circle decorations ──
+Alice ->x Bob : cross end (->x)
+Alice o-> Bob : circle start (o->)
+Alice o->o Bob : circle both (o->o)
+Alice x-> Bob : cross start (x->)
+
+' ── Self message ──
+Alice -> Alice : self call
+
+' ── Divider ──
+== Section: Activation & Lifecycle ==
+
+' ── Explicit activate / deactivate ──
+Alice -> Bob : call
+activate Bob
+Bob -> Controller : forward
+activate Controller
+Controller --> Bob : done
+deactivate Controller
+Bob --> Alice : response
+deactivate Bob
+
+' ── Inline activation (++ / --) ──
+Alice -> Bob ++ : inline activate
+Bob --> Alice -- : inline deactivate
+
+' ── Combined inline (++--) ──
+Alice -> Bob ++-- : activate target, deactivate source
+
+' ── Create and destroy ──
+create UserEntity
+Alice -> UserEntity : new()
+Alice -> UserEntity : use()
+destroy UserEntity
+
+' ── Return keyword ──
+Alice -> Bob ++ : doWork()
+return result
+
+== Section: Fragments ==
+
+' ── Alt / else ──
+alt success case
+  Alice -> Bob : happy path
+else failure case
+  Alice -> Bob : error path
+end
+
+' ── Loop ──
+loop 10 times
+  Alice -> Bob : repeated call
+end
+
+' ── Opt ──
+opt optional step
+  Alice -> Controller : maybe
+end
+
+' ── Par ──
+par parallel A
+  Alice -> Bob : branch A
+end
+par parallel B
+  Alice -> Controller : branch B
+end
+
+' ── Break ──
+loop processing
+  Alice -> Bob : process
+  break error detected
+    Alice -> Bob : abort
+  end
+end
+
+' ── Critical ──
+critical transaction
+  Alice -> DB : begin
+  Alice -> DB : commit
+end
+
+' ── Group ──
+group custom label
+  Alice -> Bob : inside group
+end
+
+' ── Nested fragments ──
+alt outer
+  loop inner
+    Alice -> Bob : nested
+  end
+else other
+  Alice -> Bob : flat
+end
+
+== Section: Notes ==
+
+' ── Note positions ──
+note right of Alice : Right note
+note left of Bob : Left note
+note over Alice : Over note
+
+' ── Note over two participants ──
+note over Alice, Bob : Spanning note
+
+' ── Multi-line note ──
+note right of Controller
+  Line one
+  Line two
+  Line three
+end note
+
+' ── Note across ──
+note across : This note spans all participants
+
+' ── hnote and rnote ──
+hnote right of Alice : Hexagonal note
+rnote right of Bob : Rounded note
+
+' ── Note on arrow ──
+Alice -> Bob : annotated message
+note right : Arrow annotation
+
+== Section: Other Elements ==
+
+' ── Delay ──
+... waiting ...
+
+' ── HSpace ──
+||20||
+
+' ── Reference ──
+ref over Alice, Bob : See authentication flow
+
+' ── Autonumber ──
+autonumber
+Alice -> Bob : numbered 1
+Alice -> Bob : numbered 2
+Alice -> Bob : numbered 3
+autonumber stop
+
+' ── Messages to all participant types ──
+Alice -> FrontEnd : to boundary
+Alice -> Controller : to control
+Alice -> UserEntity : to entity
+Alice -> MessageQueue : to queue
+Alice -> DB : to database
+Alice -> LogList : to collections
+Alice -> LDN : to aliased
+Alice -> SvcA : to boxed A
+SvcA -> SvcB : internal
+
+' ── Arrow with color ──
+Alice -[#red]> Bob : red arrow
+
+@enduml`;
+
+const result = convert(plantUml);
+
+writeFileSync(join(__dirname, 'plantuml-comprehensive-test.drawio'), result.xml);
+writeFileSync(join(__dirname, 'plantuml-comprehensive-test.puml'), plantUml);
+console.log('Generated: plantuml-comprehensive-test.drawio');
+console.log('Generated: plantuml-comprehensive-test.puml');
+console.log(`Diagram type: ${result.diagramType}`);
+console.log(`XML length: ${result.xml.length} chars`);

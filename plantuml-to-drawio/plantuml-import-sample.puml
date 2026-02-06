@@ -1,0 +1,77 @@
+@startuml
+title E-Commerce Order Processing
+
+actor Customer
+participant "Web App" as Web
+participant "Order Service" as Orders
+participant "Payment Gateway" as Payment
+database "Order DB" as DB
+participant "Notification Service" as Notify
+
+== Place Order ==
+
+Customer -> Web : Add to cart
+Customer -> Web : Checkout
+
+Web -> Orders : createOrder(items, customer)
+activate Orders
+
+Orders -> DB : saveOrder(pending)
+activate DB
+DB --> Orders : orderId
+deactivate DB
+
+Orders -> Payment : processPayment(amount, card)
+activate Payment
+
+alt payment success
+  Payment --> Orders : paymentConfirmed
+
+  Orders -> DB : updateStatus(paid)
+
+  Orders -> Notify : sendConfirmation(orderId)
+  activate Notify
+  Notify --> Customer : Order confirmation email
+  deactivate Notify
+
+  Orders --> Web : orderConfirmed(orderId)
+else payment failed
+  Payment --> Orders : paymentDeclined(reason)
+
+  Orders -> DB : updateStatus(failed)
+  Orders --> Web : orderFailed(reason)
+
+  Web --> Customer : Payment error message
+end
+
+deactivate Payment
+deactivate Orders
+
+== Order Fulfillment ==
+
+... 2 hours later ...
+
+ref over Orders, DB : Inventory check & allocation
+
+Orders -> Notify : sendShippingUpdate(orderId)
+activate Notify
+Notify --> Customer : Shipping notification
+deactivate Notify
+
+note right of Orders : Order moves to\nfulfillment queue
+
+Orders -> Orders : processShipment()
+
+== Delivery ==
+
+note over Customer, Notify
+  Customer receives package
+  and confirms delivery
+end note
+
+Customer -> Web : confirmDelivery(orderId)
+Web -> Orders : markDelivered(orderId)
+Orders -> DB : updateStatus(delivered)
+
+destroy Payment
+@enduml
