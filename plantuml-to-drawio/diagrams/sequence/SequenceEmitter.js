@@ -631,7 +631,7 @@ export class SequenceEmitter {
 		if (msg.isSelf) {
 			this._emitSelfMessage(msg, id, fromPos, y);
 		} else {
-			const style = this._getMessageStyle(msg.arrow);
+			let style = this._getMessageStyle(msg.arrow);
 
 			let targetX = toPos.centerX;
 			let sourceX = fromPos.centerX;
@@ -643,6 +643,22 @@ export class SequenceEmitter {
 					? toPos.x               // arrow from left → hit left edge
 					: toPos.x + toPos.width; // arrow from right → hit right edge
 				this.justCreatedParticipants.delete(msg.to);
+			}
+
+			// Adjust X coordinates to meet activation bar edges when active
+			const sourceHasAct = this._getActiveActivationId(msg.from) !== null;
+			const targetHasAct = this._getActiveActivationId(msg.to) !== null;
+			const goingRight = fromPos.centerX < toPos.centerX;
+
+			if (sourceHasAct) {
+				// Shift source X to the edge of the activation bar facing the target
+				const halfAct = LAYOUT.ACTIVATION_WIDTH / 2;
+				sourceX = goingRight ? fromPos.centerX + halfAct : fromPos.centerX - halfAct;
+			}
+			if (targetHasAct) {
+				// Shift target X to the edge of the activation bar facing the source
+				const halfAct = LAYOUT.ACTIVATION_WIDTH / 2;
+				targetX = goingRight ? toPos.centerX - halfAct : toPos.centerX + halfAct;
 			}
 
 			this.cells.push(buildCell({
@@ -680,6 +696,9 @@ export class SequenceEmitter {
 				}
 			}
 		}
+
+		// Capture whether source has activation before deactivation
+		const sourceHasAct = fromCode ? (this._getActiveActivationId(fromCode) !== null) : false;
 
 		if (fromCode !== null) {
 			// Find the caller — the second most recently activated, or the first participant
@@ -720,6 +739,7 @@ export class SequenceEmitter {
 
 		const id = this.nextId();
 		const y = this.currentY + LAYOUT.ROW_HEIGHT / 2;
+		const goingRight = fromPos.centerX < toPos.centerX;
 
 		// Return messages are always dotted with a normal arrowhead
 		const arrow = new ArrowConfig();
@@ -727,22 +747,43 @@ export class SequenceEmitter {
 		arrow.head2 = ArrowHead.NORMAL;
 		const style = this._getMessageStyle(arrow);
 
+		// Adjust X coordinates to meet activation bar edges
+		let sourceX = fromPos.centerX;
+		let targetX = toPos.centerX;
+		const halfAct = LAYOUT.ACTIVATION_WIDTH / 2;
+
+		if (sourceHasAct) {
+			sourceX = goingRight ? fromPos.centerX - halfAct : fromPos.centerX + halfAct;
+		}
+
+		const targetHasAct = this._getActiveActivationId(toCode) !== null;
+		if (targetHasAct) {
+			targetX = goingRight ? toPos.centerX + halfAct : toPos.centerX - halfAct;
+		}
+
 		this.cells.push(buildCell({
 			id: id,
 			value: msg.label,
 			style: style,
 			edge: true,
 			parent: this.parentId,
-			sourcePoint: { x: fromPos.centerX, y: y },
-			targetPoint: { x: toPos.centerX, y: y }
+			sourcePoint: { x: sourceX, y: y },
+			targetPoint: { x: targetX, y: y }
 		}));
 
+		this.lastMessageY = y;
 		this.currentY += LAYOUT.ROW_HEIGHT;
 	}
 
 	_emitSelfMessage(msg, id, pos, y) {
 		const style = this._getMessageStyle(msg.arrow);
-		const cx = pos.centerX;
+		let cx = pos.centerX;
+
+		// If the participant has an active activation bar, start from its right edge
+		const hasAct = this._getActiveActivationId(msg.from) !== null;
+		if (hasAct) {
+			cx = pos.centerX + LAYOUT.ACTIVATION_WIDTH / 2;
+		}
 
 		// Self-message: loop that goes right and back
 		this.cells.push(buildCell({
@@ -771,23 +812,25 @@ export class SequenceEmitter {
 		const y = this.currentY + LAYOUT.ROW_HEIGHT / 2;
 
 		const style = this._getMessageStyle(msg.arrow);
+		const hasAct = this._getActiveActivationId(msg.participant) !== null;
+		const halfAct = LAYOUT.ACTIVATION_WIDTH / 2;
 		let startX, endX;
 
 		switch (msg.exoType) {
 			case ExoMessageType.FROM_LEFT:
 				startX = 0;
-				endX = pos.centerX;
+				endX = hasAct ? pos.centerX - halfAct : pos.centerX;
 				break;
 			case ExoMessageType.TO_LEFT:
-				startX = pos.centerX;
+				startX = hasAct ? pos.centerX - halfAct : pos.centerX;
 				endX = 0;
 				break;
 			case ExoMessageType.FROM_RIGHT:
 				startX = this.diagramWidth;
-				endX = pos.centerX;
+				endX = hasAct ? pos.centerX + halfAct : pos.centerX;
 				break;
 			case ExoMessageType.TO_RIGHT:
-				startX = pos.centerX;
+				startX = hasAct ? pos.centerX + halfAct : pos.centerX;
 				endX = this.diagramWidth;
 				break;
 		}
@@ -802,6 +845,7 @@ export class SequenceEmitter {
 			targetPoint: { x: endX, y: y }
 		}));
 
+		this.lastMessageY = y;
 		this.currentY += LAYOUT.ROW_HEIGHT;
 	}
 
@@ -934,9 +978,13 @@ export class SequenceEmitter {
 		const pos = this.participantPositions.get(code);
 		if (!pos) return;
 
+		// End the activation bar at the last message Y position,
+		// not at currentY which has already advanced past the message
+		const endY = this.lastMessageY || this.currentY;
+
 		// Coordinates relative to group container
 		const relX = pos.width / 2 - LAYOUT.ACTIVATION_WIDTH / 2;
-		const height = this.currentY - activation.startY;
+		const height = endY - activation.startY;
 		const groupId = this.participantGroupIds.get(code);
 
 		let style = STYLES.activation;
