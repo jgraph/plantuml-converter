@@ -185,7 +185,7 @@ else other condition     — new section with condition
 end                      — closes the innermost fragment
 ```
 
-**All fragment types**: `alt`, `loop`, `opt`, `par`, `par2`, `break`, `critical`, `group`.
+**All fragment types**: `alt`, `loop`, `opt`, `par`, `par2`, `break`, `critical`, `group`, `partition`.
 
 **Nesting**: Uses a `fragmentStack` array. Opening a fragment pushes; `end` pops and adds the fragment to the current context (which may be another fragment's section, enabling nesting).
 
@@ -688,23 +688,28 @@ Each element type consumes vertical space:
 | Feature | Parser | Model | Emitter | Notes |
 |---|---|---|---|---|
 | Autonumber | ✅ | ✅ | ❌ | Need to prefix labels with computed numbers |
+| Autonumber resume | ✅ | ✅ | ❌ | Parsed and tested in comprehensive.puml |
 | Return messages | ✅ (partial) | ✅ | ❌ (just advances Y) | Need activation stack to resolve source/target |
 | Multicast | ✅ | ✅ (stored) | ❌ | `msg.multicast[]` populated but not emitted as extra arrows |
 | Parallel `&` | ✅ | ✅ (flag) | ❌ | `msg.isParallel` set but no Y-sharing logic |
 | Title | ✅ | ✅ | ❌ | `diagram.title` stored but not rendered |
 | Participant stereotypes | ✅ | ✅ | ❌ | `p.stereotype` stored but not rendered |
+| Participant colors | ✅ | ✅ | ❌ | `p.color` stored but not rendered |
+| Participant ordering | ✅ | ✅ | ❌ | `p.order` stored but not rendered |
 | Arrow `bold` / `hidden` | ✅ (parsed) | ✅ | ❌ | `ArrowBody.BOLD`/`HIDDEN` not mapped to styles |
 | Arrow part (top/bottom) | ✅ | ✅ | ❌ | `ArrowPart.TOP_PART`/`BOTTOM_PART` not visually distinct |
 | Exo arrow direction | ✅ | ✅ | ⚠️ (partial) | Direction logic for `[<-` and `->]` variants may be wrong — needs visual testing |
+| Autoactivate | ✅ | ✅ | ❌ | `autoactivate on/off` parsed but not used in emitter |
+| Newpage | ✅ | ✅ | ❌ | Parsed but not emitted (single-page output only) |
+| Hide/show footbox | ✅ | ✅ | ❌ | `hide footbox` parsed but footer boxes always omitted |
+| Fragment colors | ✅ | ✅ | ❌ | `alt #LightPink` parsed but color not applied in emitter |
+| Partition | ✅ | ✅ | ❌ | Same as `group` in model, tested in comprehensive.puml |
 
 ### Deferred Features (Tier 3 — not parsed)
 
 - Angle specifications on arrows
-- Partial arrows (top/bottom half)
 - Link anchors
-- `autoactivate`
-- `newpage`
-- Complex autonumber formats with `resume`/`inc`
+- Complex autonumber formats with `inc`
 - `!include` / preprocessor directives
 - `skinparam` (style customization)
 - `header` / `footer` / `caption`
@@ -752,37 +757,51 @@ Each element type consumes vertical space:
 - Diagram type detection
 - No-wrap mode (wrapInDocument=false, wrapInGroup=false)
 
-### Test Gaps
+### Test Gaps (unit tests in test.js)
 
-- No tests for exo arrows parsing
-- No tests for multicast parsing
-- No tests for `hnote`/`rnote` style parsing
-- No tests for note across
-- No tests for note on arrow
-- No tests for `create` (standalone or inline `**`)
-- No tests for color modifiers on arrows (`-[#red]>`)
-- No tests for participant ordering
-- No tests for combined activation specs (`++--`, `--++`)
-- No tests for `autonumber stop`/`resume`
-- No tests for ref multi-line
-- No tests that verify emitter output geometry/positions
-- No tests that verify z-order in output
+- No unit tests for exo arrows parsing
+- No unit tests for multicast parsing
+- No unit tests for `hnote`/`rnote` style parsing
+- No unit tests for note across
+- No unit tests for note on arrow
+- No unit tests for `create` (standalone or inline `**`)
+- No unit tests for color modifiers on arrows (`-[#red]>`)
+- No unit tests for participant ordering
+- No unit tests for combined activation specs (`++--`, `--++`)
+- No unit tests for `autonumber stop`/`resume`
+- No unit tests for ref multi-line
+- No unit tests that verify emitter output geometry/positions
+- No unit tests that verify z-order in output
 
-### Visual Test (generate-comprehensive-test.js)
+Note: Most of the above are covered in `comprehensive.puml` for visual testing but lack programmatic assertions in `test.js`.
+
+### Visual Test (comprehensive.puml)
 
 The comprehensive test `.puml` exercises every feature in one diagram:
 - All 8 participant types + alias + box grouping
+- Participant modifiers: `order`, stereotype (`<<service>>`), color (`#LightGreen`)
 - Arrow types: `->`, `-->`, `->>`, `-->>`, `<-`, `<--`, `<->`, `->x`, `o->`, `o->o`, `x->`
+- Half-arrows: `-\` (top), `-/` (bottom)
+- Arrow inline styles: `[#blue]`, `[#red]`, `[dashed]`, `[dotted]`, `[hidden]`
+- Multi-line message labels (`\n`)
 - Self message
+- Multicast messages (`Alice -> Bob & Controller & DB`)
+- Parallel messages (`& Alice -> Controller`)
 - Dividers between sections
-- Explicit activate/deactivate
-- Inline `++`, `--`, `++--`
-- Create + destroy lifecycle
+- Explicit activate/deactivate (including colored: `activate Bob #salmon`)
+- Inline `++`, `--`, `++--`, `--++`, `++ #gold` (with color)
+- Inline create `**` and destroy `!!`
+- Create + destroy lifecycle (explicit `create`/`destroy` keywords)
 - Return keyword
-- All fragment types: alt/else, loop, opt, par, break, critical, group, nested
-- Notes: right, left, over, over-two, multi-line, across, hnote, rnote, on-arrow
-- Delay, HSpace, Reference
-- Autonumber (start/stop)
+- `autoactivate on/off`
+- All fragment types: alt/else, alt/else/also, loop, opt, par (with else branches), break, critical, group, partition, nested
+- Colored fragments: `alt #LightPink ... else #LightGreen`
+- Notes: right, left, over, over-two, multi-line, across, hnote, rnote, on-arrow (right and left)
+- Exogenous (boundary) messages: `[->`, `->]`, `[<-`, `<-]`, `]->`, dotted variants
+- Delay (with and without label), HSpace, Reference
+- Autonumber: start/stop, start+increment (`autonumber 10 5`), resume
+- `newpage` (creates second page)
+- `hide footbox`
 - Messages to every participant type
 - Colored arrow
 - Box grouping with color

@@ -14,6 +14,15 @@ collections LogList
 ' ── Participant with alias and ordering ──
 participant "Long Display Name" as LDN
 
+' ── Participant with explicit order ──
+participant Zed order 99
+
+' ── Participant with stereotype ──
+participant Styled <<service>>
+
+' ── Participant with color ──
+participant Colored #LightGreen
+
 ' ── Box grouping ──
 box "Internal Services" #LightBlue
   participant SvcA
@@ -39,8 +48,25 @@ Alice o-> Bob : circle start (o->)
 Alice o->o Bob : circle both (o->o)
 Alice x-> Bob : cross start (x->)
 
+' ── Half-arrow (top/bottom part) ──
+Alice -\ Bob : top half (-\)
+Alice -/ Bob : bottom half (-/)
+
 ' ── Self message ──
 Alice -> Alice : self call
+
+' ── Multicast (message to multiple participants) ──
+Alice -> Bob & Controller & DB : multicast message
+
+' ── Arrow with inline style ──
+Alice -[#blue]> Bob : blue arrow
+Alice -[#red]-> Bob : red dotted arrow
+Alice -[dashed]-> Bob : dashed style
+Alice -[dotted]-> Bob : dotted style
+Alice -[hidden]-> Bob : hidden arrow
+
+' ── Multi-line message label ──
+Alice -> Bob : first line\nsecond line
 
 ' ── Divider ──
 == Section: Activation & Lifecycle ==
@@ -55,14 +81,36 @@ deactivate Controller
 Bob --> Alice : response
 deactivate Bob
 
+' ── Activate with color ──
+Alice -> Bob : colored activation
+activate Bob #salmon
+
+Bob --> Alice : done
+deactivate Bob
+
 ' ── Inline activation (++ / --) ──
 Alice -> Bob ++ : inline activate
+Bob --> Alice -- : inline deactivate
+
+' ── Inline activation with color ──
+Alice -> Bob ++ #gold : inline activate colored
 Bob --> Alice -- : inline deactivate
 
 ' ── Combined inline (++--) ──
 Alice -> Bob ++-- : activate target, deactivate source
 
-' ── Create and destroy ──
+' ── Combined inline (--++) ──
+Alice -> Bob --++ : deactivate source, activate target
+Bob --> Alice -- : back
+
+' ── Inline destroy (!!) ──
+Alice -> Bob ++ : doSomething()
+Bob --> Alice -- : done
+create Zed
+Alice -> Zed ** : create via arrow
+Alice -> Zed !! : destroy via arrow
+
+' ── Create and destroy (explicit) ──
 create UserEntity
 Alice -> UserEntity : new()
 Alice -> UserEntity : use()
@@ -72,6 +120,12 @@ destroy UserEntity
 Alice -> Bob ++ : doWork()
 return result
 
+' ── Autoactivate ──
+autoactivate on
+Alice -> Bob : auto-activated call
+Bob --> Alice : auto-deactivated return
+autoactivate off
+
 == Section: Fragments ==
 
 ' ── Alt / else ──
@@ -79,6 +133,22 @@ alt success case
   Alice -> Bob : happy path
 else failure case
   Alice -> Bob : error path
+end
+
+' ── Alt with multiple else (also) ──
+alt case A
+  Alice -> Bob : path A
+else case B
+  Alice -> Bob : path B
+also case C
+  Alice -> Bob : path C
+end
+
+' ── Colored grouping ──
+alt #LightPink success
+  Alice -> Bob : colored fragment
+else #LightGreen failure
+  Alice -> Bob : colored else
 end
 
 ' ── Loop ──
@@ -91,11 +161,10 @@ opt optional step
   Alice -> Controller : maybe
 end
 
-' ── Par ──
+' ── Par with else branches ──
 par parallel A
   Alice -> Bob : branch A
-end
-par parallel B
+else parallel B
   Alice -> Controller : branch B
 end
 
@@ -116,6 +185,11 @@ end
 ' ── Group ──
 group custom label
   Alice -> Bob : inside group
+end
+
+' ── Partition ──
+partition processing
+  Alice -> Bob : in partition
 end
 
 ' ── Nested fragments ──
@@ -155,10 +229,38 @@ rnote right of Bob : Rounded note
 Alice -> Bob : annotated message
 note right : Arrow annotation
 
+' ── Note on arrow left side ──
+Alice -> Bob : another annotated
+note left : Left arrow note
+
+== Section: Exogenous Messages ==
+
+' ── Incoming from left boundary ──
+[-> Alice : from left
+[-> Bob : from left to Bob
+
+' ── Outgoing to right boundary ──
+Alice ->] : to right
+Bob ->] : Bob to right
+
+' ── Incoming from right boundary ──
+Alice <-] : from right
+]-> Alice : from right alt syntax
+
+' ── Outgoing to left boundary ──
+[<- Alice : to left
+
+' ── Dotted exogenous ──
+[--> Alice : dotted from left
+Alice -->] : dotted to right
+
 == Section: Other Elements ==
 
 ' ── Delay ──
 ... waiting ...
+
+' ── Delay without label ──
+...
 
 ' ── HSpace ──
 ||20||
@@ -173,6 +275,23 @@ Alice -> Bob : numbered 2
 Alice -> Bob : numbered 3
 autonumber stop
 
+' ── Autonumber with start and increment ──
+autonumber 10 5
+Alice -> Bob : numbered 10
+Alice -> Bob : numbered 15
+
+' ── Autonumber resume ──
+autonumber resume
+Alice -> Bob : resumed
+
+autonumber stop
+
+' ── Newpage ──
+newpage Second page
+
+' ── Show/hide footbox ──
+hide footbox
+
 ' ── Messages to all participant types ──
 Alice -> FrontEnd : to boundary
 Alice -> Controller : to control
@@ -186,5 +305,9 @@ SvcA -> SvcB : internal
 
 ' ── Arrow with color ──
 Alice -[#red]> Bob : red arrow
+
+' ── Parallel messages ──
+Alice -> Bob : first parallel
+& Alice -> Controller : second parallel
 
 @enduml
