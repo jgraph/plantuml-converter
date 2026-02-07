@@ -254,9 +254,9 @@ const STYLES = {
 		rounded: 1,
 		whiteSpace: 'wrap',
 		html: 1,
-		fillColor: 'none',
-		strokeColor: '#cccccc',
-		dashed: 1,
+		fillColor: '#dae8fc',
+		strokeColor: '#6c8ebf',
+		opacity: 30,
 		verticalAlign: 'top',
 		align: 'center',
 		spacingTop: 2
@@ -1184,7 +1184,7 @@ export class SequenceEmitter {
 
 			let style = STYLES.box;
 			if (box.color) {
-				style = style.replace(/strokeColor=[^;]+/, `strokeColor=${box.color}`);
+				style = style.replace(/fillColor=[^;]+/, `fillColor=${box.color}`);
 			}
 
 			boxCells.push(buildCell({
