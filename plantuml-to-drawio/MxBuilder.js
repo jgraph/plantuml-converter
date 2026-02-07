@@ -114,8 +114,8 @@ export function buildCell({
   // Build geometry element
   let geometryXml = '';
 
-  if (edge && (sourcePoint || targetPoint)) {
-    // Freestanding edge: use sourcePoint/targetPoint with optional waypoints
+  if (edge && (sourcePoint || targetPoint || source || target)) {
+    // Edge geometry: relative with optional source/target points and waypoints
     const innerParts = [];
 
     if (sourcePoint) {
@@ -131,10 +131,15 @@ export function buildCell({
       innerParts.push(`    <Array as="points">\n${wpXml}\n    </Array>`);
     }
 
-    geometryXml = `
+    if (innerParts.length > 0) {
+      geometryXml = `
     <mxGeometry relative="1" as="geometry">
 ${innerParts.join('\n')}
     </mxGeometry>`;
+    } else {
+      geometryXml = `
+    <mxGeometry relative="1" as="geometry"/>`;
+    }
   } else if (geometry) {
     // Vertex geometry
     const geoAttrs = [];
