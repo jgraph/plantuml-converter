@@ -55,7 +55,7 @@ const LAYOUT = {
 	PARTICIPANT_GAP: 40,       // Horizontal gap between participants
 	LIFELINE_TOP_MARGIN: 10,   // Gap between participant box and first element
 	ROW_HEIGHT: 40,            // Vertical step per message/element
-	ACTIVATION_WIDTH: 12,      // Width of activation bar
+	ACTIVATION_WIDTH: 16,      // Width of activation bar
 	NOTE_WIDTH: 120,
 	NOTE_HEIGHT: 30,
 	NOTE_MARGIN: 10,
@@ -260,12 +260,15 @@ const STYLES = {
 		rounded: 0,
 		whiteSpace: 'wrap',
 		html: 1,
-		fillColor: '#f0f5ff',
-		strokeColor: '#cccccc',
+		fillColor: 'none',
+		strokeColor: '#999999',
 		strokeWidth: 1,
+		dashed: 1,
+		dashPattern: '4 4',
 		verticalAlign: 'top',
-		align: 'center',
-		spacingTop: 2
+		align: 'left',
+		spacingTop: 2,
+		spacingLeft: 5
 	}),
 
 	destroy: buildStyle({
@@ -1213,7 +1216,13 @@ export class SequenceEmitter {
 
 			let style = STYLES.box;
 			if (box.color) {
-				style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(box.color)}`);
+				// Apply user-specified color with low opacity so
+				// participants inside the box remain visible
+				const hexColor = normalizeColor(box.color);
+				style = style.replace(/fillColor=[^;]+/, `fillColor=${hexColor}`);
+				style = style.replace(/dashed=1;/, '');
+				style = style.replace(/dashPattern=[^;]+;/, '');
+				style += 'opacity=20;';
 			}
 
 			boxCells.push(buildCell({
