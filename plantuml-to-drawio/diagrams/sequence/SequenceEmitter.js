@@ -358,12 +358,22 @@ export class SequenceEmitter {
 		// 9. Emit boxes (behind everything else)
 		const boxCells = this._emitBoxes();
 
-		// 10. Sort for z-order: vertices first, then edges on top
+		// 10. Sort for z-order:
+		//   Layer 0: boxes (background)
+		//   Layer 1: lifelines (dashed vertical lines)
+		//   Layer 2: activation bars (opaque white, covers lifelines)
+		//   Layer 3: other vertices (participant headers, notes, fragments, destroy markers)
+		//   Layer 4: message edges (arrows between participants)
 		const isEdge = (xml) => /\bedge="1"/.test(xml);
-		const vertices = this.cells.filter(xml => !isEdge(xml));
-		const edges = this.cells.filter(xml => isEdge(xml));
+		const isLifeline = (xml) => isEdge(xml) && /endArrow=none/.test(xml) && /dashed=1/.test(xml);
+		const isActivation = (xml) => !isEdge(xml) && /targetShapes=umlLifeline/.test(xml);
 
-		return [...boxCells, ...vertices, ...edges];
+		const lifelines = this.cells.filter(xml => isLifeline(xml));
+		const activations = this.cells.filter(xml => isActivation(xml));
+		const otherVertices = this.cells.filter(xml => !isEdge(xml) && !isActivation(xml));
+		const messageEdges = this.cells.filter(xml => isEdge(xml) && !isLifeline(xml));
+
+		return [...boxCells, ...lifelines, ...activations, ...otherVertices, ...messageEdges];
 	}
 
 	// ── Participant layout ───────────────────────────────────────────────
@@ -850,6 +860,16 @@ export class SequenceEmitter {
 			startY: startY,
 			color: color
 		});
+	}
+
+	/**
+	 * Get the cell ID of the topmost active activation bar for a participant.
+	 * Returns null if the participant has no active activation.
+	 */
+	_getActiveActivationId(code) {
+		const stack = this.activeActivations.get(code);
+		if (!stack || stack.length === 0) return null;
+		return stack[stack.length - 1].id;
 	}
 
 	_endActivation(code) {
