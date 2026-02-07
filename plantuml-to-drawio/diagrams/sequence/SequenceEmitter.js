@@ -24,6 +24,7 @@ import {
 	LifeEventType,
 	GroupingType,
 	ExoMessageType,
+	ArrowConfig,
 	Message,
 	ExoMessage,
 	LifeEvent,
@@ -83,8 +84,9 @@ const STYLES = {
 	}),
 
 	actor: buildStyle({
-		shape: 'mxgraph.basic.person',
-		whiteSpace: 'wrap',
+		shape: 'umlActor',
+		verticalLabelPosition: 'bottom',
+		verticalAlign: 'top',
 		html: 1,
 		fillColor: '#dae8fc',
 		strokeColor: '#6c8ebf'
@@ -115,11 +117,12 @@ const STYLES = {
 	}),
 
 	database: buildStyle({
-		shape: 'mxgraph.flowchart.database',
+		shape: 'cylinder3',
 		whiteSpace: 'wrap',
 		html: 1,
 		fillColor: '#dae8fc',
-		strokeColor: '#6c8ebf'
+		strokeColor: '#6c8ebf',
+		size: 15
 	}),
 
 	queue: buildStyle({
@@ -319,7 +322,6 @@ export class SequenceEmitter {
 
 		// 4. Add some bottom margin
 		this.currentY += LAYOUT.ROW_HEIGHT;
-		this.diagramHeight = this.currentY;
 
 		// 5. Emit lifelines (from header bottom to current Y)
 		this._emitLifelines(lifelineStartY, this.currentY);
@@ -327,10 +329,16 @@ export class SequenceEmitter {
 		// 6. Close any remaining activations
 		this._closeAllActivations();
 
-		// 7. Emit boxes (behind everything else)
+		// 7. Emit bottom participant boxes (footers)
+		this._emitParticipantFooters();
+
+		// 8. Update diagram height after footers
+		this.diagramHeight = this.currentY;
+
+		// 9. Emit boxes (behind everything else)
 		const boxCells = this._emitBoxes();
 
-		// 8. Sort for z-order: vertices first, then edges on top
+		// 10. Sort for z-order: vertices first, then edges on top
 		const isEdge = (xml) => /\bedge="1"/.test(xml);
 		const vertices = this.cells.filter(xml => !isEdge(xml));
 		const edges = this.cells.filter(xml => isEdge(xml));
@@ -386,6 +394,36 @@ export class SequenceEmitter {
 
 			this._emitSingleParticipantHeader(code, p, LAYOUT.MARGIN_TOP);
 		}
+	}
+
+	// ── Emit participant footers ────────────────────────────────────────
+
+	_emitParticipantFooters() {
+		const footerY = this.currentY;
+
+		for (const [code, p] of this.diagram.participants) {
+			// Skip created participants that were destroyed
+			// (they don't get footer boxes)
+			if (p.isCreated) continue;
+
+			const pos = this.participantPositions.get(code);
+			if (!pos) continue;
+
+			const height = this._participantHeight(p);
+			const style = this._getParticipantStyle(p);
+
+			this.cells.push(buildCell({
+				id: this.nextId(),
+				value: p.displayName || p.code,
+				style: style,
+				vertex: true,
+				parent: this.parentId,
+				geometry: geom(pos.x, footerY, pos.width, height)
+			}));
+		}
+
+		// Advance Y past the footer boxes
+		this.currentY += LAYOUT.PARTICIPANT_HEIGHT;
 	}
 
 	/**
@@ -478,8 +516,7 @@ export class SequenceEmitter {
 
 	_emitMessage(msg) {
 		if (msg._isReturn) {
-			// Return messages: for now, just advance Y
-			this.currentY += LAYOUT.ROW_HEIGHT;
+			this._emitReturnMessage(msg);
 			return;
 		}
 
@@ -523,6 +560,81 @@ export class SequenceEmitter {
 		if (msg.noteOnArrow) {
 			this._emitNoteOnArrow(msg.noteOnArrow, fromPos, toPos, y);
 		}
+
+		this.currentY += LAYOUT.ROW_HEIGHT;
+	}
+
+	_emitReturnMessage(msg) {
+		// Resolve the return source/target from the activation stack.
+		// The most recently activated participant is the return source,
+		// and whoever activated it is the return target.
+		let fromCode = null;
+		let toCode = null;
+
+		// Find the most recently activated participant
+		for (const [code, stack] of this.activeActivations) {
+			if (stack.length > 0) {
+				if (fromCode === null || stack[stack.length - 1].startY > (this.activeActivations.get(fromCode)?.[this.activeActivations.get(fromCode).length - 1]?.startY || 0)) {
+					fromCode = code;
+				}
+			}
+		}
+
+		if (fromCode !== null) {
+			// Find the caller — the second most recently activated, or the first participant
+			for (const [code, stack] of this.activeActivations) {
+				if (code !== fromCode && stack.length > 0) {
+					if (toCode === null || stack[stack.length - 1].startY > (this.activeActivations.get(toCode)?.[this.activeActivations.get(toCode).length - 1]?.startY || 0)) {
+						toCode = code;
+					}
+				}
+			}
+
+			// Fallback: if no other activation, use the first participant that isn't fromCode
+			if (toCode === null) {
+				for (const [code] of this.diagram.participants) {
+					if (code !== fromCode) {
+						toCode = code;
+						break;
+					}
+				}
+			}
+
+			// Deactivate the return source
+			this._endActivation(fromCode);
+		}
+
+		if (fromCode === null || toCode === null) {
+			// Can't resolve — just advance Y
+			this.currentY += LAYOUT.ROW_HEIGHT;
+			return;
+		}
+
+		const fromPos = this.participantPositions.get(fromCode);
+		const toPos = this.participantPositions.get(toCode);
+		if (!fromPos || !toPos) {
+			this.currentY += LAYOUT.ROW_HEIGHT;
+			return;
+		}
+
+		const id = this.nextId();
+		const y = this.currentY + LAYOUT.ROW_HEIGHT / 2;
+
+		// Return messages are always dotted with a normal arrowhead
+		const arrow = new ArrowConfig();
+		arrow.body = ArrowBody.DOTTED;
+		arrow.head2 = ArrowHead.NORMAL;
+		const style = this._getMessageStyle(arrow);
+
+		this.cells.push(buildCell({
+			id: id,
+			value: msg.label,
+			style: style,
+			edge: true,
+			parent: this.parentId,
+			sourcePoint: { x: fromPos.centerX, y: y },
+			targetPoint: { x: toPos.centerX, y: y }
+		}));
 
 		this.currentY += LAYOUT.ROW_HEIGHT;
 	}
