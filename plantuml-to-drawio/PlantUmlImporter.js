@@ -17,8 +17,8 @@
  * component, etc.) by registering new handler entries.
  */
 
-import { parseSequenceDiagram } from './SequenceParser.js';
-import { emitSequenceDiagram } from './SequenceEmitter.js';
+import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
+import { emitSequenceDiagram } from './diagrams/sequence/SequenceEmitter.js';
 import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.js';
 
 // ── Diagram type registry ──────────────────────────────────────────────────

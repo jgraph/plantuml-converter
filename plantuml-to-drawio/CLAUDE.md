@@ -163,16 +163,30 @@ The converter supports re-generating from embedded PlantUML source:
 
 ```
 plantuml-to-drawio/
-  PlantUmlImporter.js    — Entry point, registry, convert/regenerate API
-  MxBuilder.js           — Shared mxGraph XML utilities
-  SequenceModel.js       — Sequence diagram data model
-  SequenceParser.js      — Sequence diagram parser
-  ArrowParser.js         — Arrow syntax parser (sequence-specific)
-  SequenceEmitter.js     — Sequence diagram → mxCell emitter
-  test.js                — Unit tests
-  generate-sample.js     — Sample diagram generator
-  generate-comprehensive-test.js — Full-feature test diagram generator
-  CLAUDE.md              — This file
+├── CLAUDE.md                          — This file: architecture, cross-cutting decisions
+├── PlantUmlImporter.js                — Entry point, registry, convert/regenerate API
+├── MxBuilder.js                       — Shared mxGraph XML utilities
+├── common/                            — Shared utilities extracted when patterns emerge
+├── diagrams/
+│   └── sequence/
+│       ├── CLAUDE.md                  — Sequence-specific semantics, drawio quirks, comparison rubric
+│       ├── SequenceParser.js          — Sequence diagram parser
+│       ├── SequenceModel.js           — Sequence diagram data model
+│       ├── SequenceEmitter.js         — Sequence diagram → mxCell emitter
+│       └── ArrowParser.js            — Arrow syntax parser (sequence-specific)
+├── tests/
+│   └── sequence/
+│       ├── comprehensive.puml         — Full-feature test (visual comparison target)
+│       ├── cases/                     — Small focused test files (one per feature)
+│       └── regression/                — Cases that previously broke (never removed)
+├── harness/
+│   ├── compare.js                     — Orchestrator: run converter, run plantuml, compare
+│   ├── export-drawio.sh               — draw.io CLI export wrapper
+│   └── vision-compare.js              — Anthropic API vision comparison call
+├── outputs/                           — Generated PNGs, diff reports (gitignored)
+├── test.js                            — Unit tests
+├── generate-sample.js                 — Sample diagram generator
+└── generate-comprehensive-test.js     — Full-feature test diagram generator
 ```
 
 ## Common Pitfalls

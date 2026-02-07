@@ -43,7 +43,7 @@ import {
 	createIdGenerator,
 	geom,
 	xmlEscape
-} from './MxBuilder.js';
+} from '../../MxBuilder.js';
 
 // ── Layout constants ───────────────────────────────────────────────────────
 

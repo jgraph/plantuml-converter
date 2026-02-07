@@ -203,9 +203,9 @@ Alice -[#red]> Bob : red arrow
 
 const result = convert(plantUml);
 
-writeFileSync(join(__dirname, 'plantuml-comprehensive-test.drawio'), result.xml);
-writeFileSync(join(__dirname, 'plantuml-comprehensive-test.puml'), plantUml);
-console.log('Generated: plantuml-comprehensive-test.drawio');
-console.log('Generated: plantuml-comprehensive-test.puml');
+writeFileSync(join(__dirname, 'outputs', 'comprehensive-test.drawio'), result.xml);
+writeFileSync(join(__dirname, 'tests', 'sequence', 'comprehensive.puml'), plantUml);
+console.log('Generated: outputs/comprehensive-test.drawio');
+console.log('Generated: tests/sequence/comprehensive.puml');
 console.log(`Diagram type: ${result.diagramType}`);
 console.log(`XML length: ${result.xml.length} chars`);

@@ -4,13 +4,13 @@
  */
 
 import { convert, extractPlantUml, regenerate, detectDiagramType } from './PlantUmlImporter.js';
-import { parseArrow, parseStyle } from './ArrowParser.js';
-import { parseSequenceDiagram } from './SequenceParser.js';
+import { parseArrow, parseStyle } from './diagrams/sequence/ArrowParser.js';
+import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
 import {
 	ArrowHead, ArrowBody, ArrowPart, ArrowDecoration,
 	Message, ExoMessage, LifeEvent, Fragment, Note, Divider, Delay, HSpace, Reference, Box,
 	LifeEventType, GroupingType, NotePosition, NoteStyle
-} from './SequenceModel.js';
+} from './diagrams/sequence/SequenceModel.js';
 
 let passed = 0;
 let failed = 0;

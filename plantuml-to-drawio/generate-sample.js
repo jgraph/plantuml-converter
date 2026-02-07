@@ -89,10 +89,10 @@ destroy Payment
 
 const result = convert(plantUml);
 
-writeFileSync(join(__dirname, 'plantuml-import-sample.drawio'), result.xml);
-writeFileSync(join(__dirname, 'plantuml-import-sample.puml'), plantUml);
-console.log('Generated: plantuml-import-sample.drawio');
-console.log('Generated: plantuml-import-sample.puml');
+writeFileSync(join(__dirname, 'outputs', 'sample-medium.drawio'), result.xml);
+writeFileSync(join(__dirname, 'tests', 'sequence', 'cases', 'sample-medium.puml'), plantUml);
+console.log('Generated: outputs/sample-medium.drawio');
+console.log('Generated: tests/sequence/cases/sample-medium.puml');
 console.log(`Diagram type: ${result.diagramType}`);
 console.log(`XML length: ${result.xml.length} chars`);
 
@@ -103,7 +103,7 @@ Bob --> Alice : hi there
 @enduml`;
 const simple = convert(simplePuml);
 
-writeFileSync(join(__dirname, 'plantuml-simple-sample.drawio'), simple.xml);
-writeFileSync(join(__dirname, 'plantuml-simple-sample.puml'), simplePuml);
-console.log('\nGenerated: plantuml-simple-sample.drawio');
-console.log('Generated: plantuml-simple-sample.puml');
+writeFileSync(join(__dirname, 'outputs', 'sample-simple.drawio'), simple.xml);
+writeFileSync(join(__dirname, 'tests', 'sequence', 'cases', 'sample-simple.puml'), simplePuml);
+console.log('\nGenerated: outputs/sample-simple.drawio');
+console.log('Generated: tests/sequence/cases/sample-simple.puml');
