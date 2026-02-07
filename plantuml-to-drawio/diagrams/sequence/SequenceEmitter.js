@@ -155,8 +155,8 @@ const STYLES = {
 	}),
 
 	activation: buildStyle({
-		fillColor: '#e6e6e6',
-		strokeColor: '#999999'
+		fillColor: '#ffffff',
+		strokeColor: '#444444'
 	}),
 
 	// Message arrow base styles — specific endArrow/dashed set per message
