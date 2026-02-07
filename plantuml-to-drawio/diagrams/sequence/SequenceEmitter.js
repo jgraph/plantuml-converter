@@ -55,7 +55,7 @@ const LAYOUT = {
 	PARTICIPANT_GAP: 40,       // Horizontal gap between participants
 	LIFELINE_TOP_MARGIN: 50,   // Gap between participant box and first element
 	ROW_HEIGHT: 40,            // Vertical step per message/element
-	ACTIVATION_WIDTH: 16,      // Width of activation bar
+	ACTIVATION_WIDTH: 10,      // Width of activation bar (draw.io standard)
 	NOTE_WIDTH: 120,
 	NOTE_HEIGHT: 30,
 	NOTE_MARGIN: 10,
@@ -155,8 +155,15 @@ const STYLES = {
 	}),
 
 	activation: buildStyle({
+		html: 1,
+		'points': '[[0,0,0,0,5],[0,1,0,0,-5],[1,0,0,0,5],[1,1,0,0,-5]]',
+		perimeter: 'orthogonalPerimeter',
+		outlineConnect: 0,
+		targetShapes: 'umlLifeline',
+		portConstraint: 'eastwest',
+		newEdgeStyle: '{"curved":0,"rounded":0}',
 		fillColor: '#ffffff',
-		strokeColor: '#444444'
+		strokeColor: '#000000'
 	}),
 
 	// Message arrow base styles — specific endArrow/dashed set per message
