@@ -16,7 +16,7 @@ import {
 	NFragment,
 	NNote,
 	NDivider
-} from './normalize.js';
+} from './normalize-sequence.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -92,6 +92,7 @@ export function extractFromPlantUmlSvg(svgText) {
 	const uidToName = new Map();   // partN → display name
 	const uidToX = new Map();      // partN → x coordinate (for ordering)
 	const uidToType = new Map();   // partN → participant type
+	const qualNameToUid = new Map(); // qualified name → partN
 
 	const groups = splitGroups(svgText);
 
@@ -102,16 +103,19 @@ export function extractFromPlantUmlSvg(svgText) {
 		const uid = attr(g, 'data-entity-uid');
 		if (!uid) continue;
 
+		const qualName = attr(g, 'data-qualified-name');
+		if (qualName) qualNameToUid.set(qualName, uid);
+
 		// Display name from <text> child
 		const name = extractFirstText(g);
 		if (!name) continue;
 
 		uidToName.set(uid, name);
 
-		// X position from first <rect> or <text>
-		const rectX = extractNumericAttr(g, /<rect[^>]+>/, 'x');
+		// X position: use <text> x (always absolute) rather than <rect> x
+		// which can be a small local offset (e.g. 2.5) within the group
 		const textX = extractNumericAttr(g, /<text[^>]+>/, 'x');
-		const x = rectX !== null ? rectX : (textX !== null ? textX : 0);
+		const x = textX !== null ? textX : 0;
 		uidToX.set(uid, x);
 
 		// Determine participant type from shapes
@@ -158,39 +162,72 @@ export function extractFromPlantUmlSvg(svgText) {
 	}
 
 	// ── Extract activations ──
-	// Activation bars: <rect fill="#FFFFFF" width="10" inside participant-lifeline groups
-	for (const g of groups) {
-		if (!/class="participant-lifeline"/.test(g)) continue;
+	// Activation bars are <rect fill="#FFFFFF" width="10"> inside lifeline <g> groups.
+	// These appear inside inner <g> with <title>QualifiedName</title>.
+	// PlantUML renders each lifeline segment separately (head/foot), causing
+	// duplicate activation rects. We deduplicate by participant + y-position.
+	{
+		const seenActivations = new Set(); // "participantName|y" to deduplicate
 
-		const uid = attr(g, 'data-entity-uid');
-		if (!uid) continue;
-		const participantName = uidToName.get(uid) || uid;
+		const titleRegex = /<title>([^<]+)<\/title>/g;
+		let tm;
+		while ((tm = titleRegex.exec(svgText)) !== null) {
+			const titleName = tm[1].trim();
+			// Check if a white activation rect follows within 300 chars
+			const after = svgText.substring(tm.index, tm.index + 300);
+			const actMatch = after.match(/<rect\s+fill="#FFFFFF"[^>]*width="10"[^>]*>/);
+			if (!actMatch) continue;
 
-		// Find white activation rects (width=10, fill=#FFFFFF)
-		const activationRegex = /<rect\s+fill="#FFFFFF"[^>]*width="10"[^>]*>/g;
-		let am;
-		while ((am = activationRegex.exec(g)) !== null) {
-			// We don't know exact message indices from SVG coordinates,
-			// but we record per-participant activations for count comparison
-			diagram.activations.push(new NActivation(participantName, -1, -1));
+			// Extract y position for deduplication
+			const yMatch = actMatch[0].match(/y="([\d.]+)"/);
+			const y = yMatch ? yMatch[1] : 'unknown';
+
+			// Resolve title name to participant display name
+			let participantName = null;
+
+			// Try direct match to display name
+			for (const [, name] of uidToName) {
+				if (name === titleName) {
+					participantName = name;
+					break;
+				}
+			}
+
+			// Try match via qualified name → uid → display name
+			if (participantName === null) {
+				const uid = qualNameToUid.get(titleName);
+				if (uid) {
+					participantName = uidToName.get(uid) || null;
+				}
+			}
+
+			if (participantName) {
+				const key = `${participantName}|${y}`;
+				if (!seenActivations.has(key)) {
+					seenActivations.add(key);
+					diagram.activations.push(new NActivation(participantName, -1, -1));
+				}
+			}
 		}
 	}
+
+	// ── Extract title ──
+	// Title appears as a <title> element at the top of the SVG, and also as
+	// a bold font-size="14" <text> element. Extract from <title> first.
+	extractTitle(svgText, diagram);
 
 	// ── Extract fragments ──
 	// Fragments: <rect fill="none" ... stroke-width:1.5> followed by tab path and text
 	extractFragments(svgText, diagram);
 
-	// ── Extract notes ──
-	// Notes: <path fill="#FEFFDD"> with nearby <text>
-	extractNotes(svgText, diagram, uidToName, uidToX);
-
 	// ── Extract dividers ──
-	// Dividers: <rect fill="#EEEEEE"> full-width with <text> label
+	// Dividers: <rect fill="#EEEEEE" height="3"> separator + label rect + <text>
 	extractDividers(svgText, diagram);
 
-	// ── Extract title ──
-	// Title appears as a standalone <text> element before participant groups
-	extractTitle(svgText, diagram, uidToX);
+	// ── Extract notes ──
+	// Notes: <path fill="#FEFFDD"> with nearby <text>
+	// Must run after title/divider extraction so we can exclude those texts
+	extractNotes(svgText, diagram, uidToName);
 
 	return diagram;
 }
@@ -210,11 +247,6 @@ function detectParticipantType(groupSvg) {
 		if (pathD && /[Aa]/.test(pathD[1]) && /[Cc]/.test(pathD[1])) {
 			return 'database';
 		}
-	}
-	// Boundary: circle + line pattern (specific path geometry)
-	if (/<circle/.test(groupSvg) || (/<ellipse/.test(groupSvg) && /<line/.test(groupSvg))) {
-		// Could be boundary, control, or entity — hard to distinguish without more detail
-		// For now, if there's a circle but not the actor pattern, try more specific checks
 	}
 	// Default: regular participant (rectangle)
 	return 'participant';
@@ -244,85 +276,108 @@ function extractFragments(svgText, diagram) {
 	// Fragments are rendered as:
 	//   <rect fill="none" ... stroke-width:1.5> — the border
 	//   <path fill="#EEEEEE" ... stroke-width:1.5> — the tab
-	//   <text ...>alt</text> — the fragment type/label
+	//   <text font-weight="bold">alt</text> — the fragment type keyword
+	//   <text>[condition text]</text> — the condition in square brackets
 
-	// Find all fragment tab paths with adjacent text
-	const tabRegex = /<path[^>]*fill="#EEEEEE"[^>]*stroke-width:1\.5[^>]*\/>/g;
+	// Find fragment border rects (fill="none" with stroke-width:1.5)
+	// then look for associated bold text with a recognized fragment keyword
+	const fragBorderRegex = /<rect[^>]*fill="none"[^>]*stroke-width:1\.5[^>]*>/g;
 	let m;
-	const fragTexts = [];
-
-	// Extract text that appears near fragment tabs
-	// Strategy: find all bold text that follows a #EEEEEE path (fragment type labels)
-	const boldTextRegex = /<text[^>]*font-weight="bold"[^>]*>([^<]*)<\/text>/g;
-	while ((m = boldTextRegex.exec(svgText)) !== null) {
-		const text = m[1].trim();
-		if (text) fragTexts.push(text);
-	}
-
-	// Fragment types we recognize
 	const fragTypes = new Set(['alt', 'else', 'loop', 'opt', 'par', 'break', 'critical', 'group', 'ref']);
 
-	for (const text of fragTexts) {
-		// Check if this is a fragment type keyword
-		const lower = text.toLowerCase();
-		if (fragTypes.has(lower) && lower !== 'else') {
-			diagram.fragments.push(new NFragment(lower, '', []));
+	while ((m = fragBorderRegex.exec(svgText)) !== null) {
+		// Search 800 chars after the border rect for bold text with fragment keyword
+		const after = svgText.substring(m.index, m.index + 800);
+		const boldTexts = [];
+		const boldRe = /<text[^>]*font-weight="bold"[^>]*>([^<]*)<\/text>/g;
+		let bm;
+		while ((bm = boldRe.exec(after)) !== null) {
+			boldTexts.push(bm[1].trim());
 		}
-	}
 
-	// Also find fragment conditions from non-bold text near fragment borders
-	// This is approximate — we capture the main fragment types and labels
-	const conditionRegex = /\[([^\]]+)\]/g;
-	while ((m = conditionRegex.exec(svgText)) !== null) {
-		// Conditions in square brackets like [payment success], [payment failed]
-		// These are rendered as part of the fragment text
+		for (const text of boldTexts) {
+			const lower = text.toLowerCase();
+			if (fragTypes.has(lower) && lower !== 'else') {
+				// Extract condition if present (bracketed text after the keyword)
+				const condTexts = [];
+				const condRe = /\[([^\]]+)\]/g;
+				let cm;
+				while ((cm = condRe.exec(after)) !== null) {
+					condTexts.push(cm[1].trim());
+				}
+				const condition = condTexts.length > 0 ? condTexts[0] : '';
+				diagram.fragments.push(new NFragment(lower, condition, []));
+				break; // One fragment per border rect
+			}
+		}
 	}
 }
 
 // ── Note extraction ───────────────────────────────────────────────────────
 
-function extractNotes(svgText, diagram, uidToName, uidToX) {
-	// Notes have fill="#FEFFDD" (yellow)
-	// Find all note paths and their adjacent text
+function extractNotes(svgText, diagram, uidToName) {
+	// Notes have fill="#FEFFDD" (yellow note paths)
+	// PlantUML renders each note as two paths (background + fold corner)
+	// followed by <text> elements with the note content.
 	const noteRegex = /<path[^>]*fill="#FEFFDD"[^>]*\/>/g;
-	const notePositions = [];
+	const notePositions = []; // { x, y, index } for each unique note
 	let m;
 
 	while ((m = noteRegex.exec(svgText)) !== null) {
-		// Extract x coordinate from the path's d attribute
+		// Extract x,y from the path's d attribute
 		const dAttr = m[0].match(/d="([^"]*)"/);
 		if (!dAttr) continue;
 
 		const xMatch = dAttr[1].match(/^M\s*([\d.]+)/);
 		const x = xMatch ? parseFloat(xMatch[1]) : 0;
 
-		// Only record unique notes (PlantUML renders note shape as two paths)
-		if (notePositions.length === 0 || Math.abs(notePositions[notePositions.length - 1] - x) > 5) {
-			notePositions.push(x);
+		// Extract y for deduplication — both paths for a single note share
+		// the same y coordinate even though x values differ (background vs fold corner)
+		const yMatch = dAttr[1].match(/^M\s*[\d.]+\s*,\s*([\d.]+)/);
+		const y = yMatch ? parseFloat(yMatch[1]) : 0;
+
+		// Only record unique notes: deduplicate by y coordinate
+		// (two paths per note share the same y but have very different x values)
+		const isDuplicate = notePositions.some(p => Math.abs(p.y - y) < 5);
+		if (!isDuplicate) {
+			notePositions.push({ x, y, index: m.index });
 		}
 	}
 
-	// Extract note text — text that appears between/after note paths
-	// Find text elements with note-like positioning
-	const allTexts = [];
-	const textRegex = /<text[^>]*x="([\d.]+)"[^>]*y="([\d.]+)"[^>]*>([^<]*)<\/text>/g;
-	while ((m = textRegex.exec(svgText)) !== null) {
-		allTexts.push({ x: parseFloat(m[1]), y: parseFloat(m[2]), text: m[3].trim() });
+	// Build a set of texts to exclude (title, divider labels, participant names, message labels, fragment types)
+	const excludeTexts = new Set();
+	if (diagram.title) excludeTexts.add(diagram.title.toLowerCase());
+	for (const d of diagram.dividers) {
+		if (d.label) excludeTexts.add(d.label.toLowerCase());
 	}
+	for (const [, name] of uidToName) {
+		excludeTexts.add(name.toLowerCase());
+	}
+	for (const msg of diagram.messages) {
+		if (msg.label) excludeTexts.add(msg.label.toLowerCase());
+	}
+	const fragKeywords = new Set(['alt', 'else', 'loop', 'opt', 'par', 'break', 'critical', 'group', 'ref']);
 
-	// For each unique note position, find nearby text
-	for (const noteX of notePositions) {
-		const nearbyTexts = allTexts.filter(t =>
-			Math.abs(t.x - noteX) < 150
-		);
-		// Filter to texts that are likely note content (not participant names or message labels)
-		// This is approximate — take the first text that isn't a known participant name
-		const participantNames = new Set([...uidToName.values()].map(n => n.toLowerCase()));
-		for (const t of nearbyTexts) {
-			if (!participantNames.has(t.text.toLowerCase()) && t.text.length > 0) {
-				diagram.notes.push(new NNote(t.text, [], 'over'));
-				break;
-			}
+	// For each unique note position, find text that follows the note path in the SVG
+	for (const note of notePositions) {
+		// Search 600 chars after the note path for text elements
+		const after = svgText.substring(note.index, note.index + 600);
+		const texts = extractTexts(after);
+
+		// Filter out texts that are clearly not note content
+		const noteTexts = [];
+		for (const t of texts) {
+			const lower = t.toLowerCase();
+			if (excludeTexts.has(lower)) continue;
+			if (fragKeywords.has(lower)) continue;
+			if (t.length === 0) continue;
+			noteTexts.push(t);
+		}
+
+		if (noteTexts.length > 0) {
+			// Join multi-line note texts
+			const fullText = noteTexts.join('\\n');
+			diagram.notes.push(new NNote(fullText, [], 'over'));
 		}
 	}
 }
@@ -330,21 +385,32 @@ function extractNotes(svgText, diagram, uidToName, uidToX) {
 // ── Divider extraction ────────────────────────────────────────────────────
 
 function extractDividers(svgText, diagram) {
-	// Dividers: <rect fill="#EEEEEE"> that spans the full width
-	// followed by or containing <text> label
-	// They are wide rectangles (separators), not the small fragment tabs
+	// Dividers (== text ==) in PlantUML SVG:
+	//   <rect fill="#EEEEEE" height="3" ...> — thin separator bar (full-width)
+	//   <line ...> — top border
+	//   <line ...> — bottom border
+	//   <rect fill="#EEEEEE" height="23" width="small" ...> — label background
+	//   <text font-weight="bold">Label</text> — divider label
+	//
+	// Strategy: find thin (height ≤ 5) #EEEEEE rects that span the diagram width,
+	// then look for the label text in the next 800 chars.
 
-	// Look for wide #EEEEEE rects (width > 200) that aren't fragment tabs
-	const rectRegex = /<rect[^>]*fill="#EEEEEE"[^>]*width="([\d.]+)"[^>]*>/g;
+	const rectRegex = /<rect[^>]*fill="#EEEEEE"[^>]*>/g;
 	let m;
 
 	while ((m = rectRegex.exec(svgText)) !== null) {
-		const width = parseFloat(m[1]);
-		if (width < 100) continue; // Skip small rects (fragment tabs)
+		const fullTag = m[0];
+		const heightStr = attr(fullTag, 'height');
+		const widthStr = attr(fullTag, 'width');
+		const height = heightStr ? parseFloat(heightStr) : 0;
+		const width = widthStr ? parseFloat(widthStr) : 0;
 
-		// Find nearby text for the divider label
-		const afterText = svgText.substring(m.index, m.index + 500);
-		const textMatch = afterText.match(/<text[^>]*>([^<]*)<\/text>/);
+		// Divider separator bars are thin (height ≤ 5) and wide (> 200)
+		if (height > 5 || width < 200) continue;
+
+		// Search for label text within 800 chars after the separator rect
+		const after = svgText.substring(m.index, m.index + 800);
+		const textMatch = after.match(/<text[^>]*font-weight="bold"[^>]*>([^<]*)<\/text>/);
 		const label = textMatch ? textMatch[1].trim() : '';
 
 		diagram.dividers.push(new NDivider(label));
@@ -353,23 +419,14 @@ function extractDividers(svgText, diagram) {
 
 // ── Title extraction ──────────────────────────────────────────────────────
 
-function extractTitle(svgText, diagram, uidToX) {
-	// Title is rendered as a centered bold text before the main diagram content
-	// Look for font-weight="bold" text that isn't inside a known group
-	const boldTexts = [];
-	const re = /<text[^>]*font-size="14"[^>]*font-weight="bold"[^>]*>([^<]*)<\/text>/g;
-	let m;
-	while ((m = re.exec(svgText)) !== null) {
-		boldTexts.push(m[1].trim());
-	}
-
-	// Fragment types to exclude
-	const fragTypes = new Set(['alt', 'else', 'loop', 'opt', 'par', 'break', 'critical', 'group', 'ref']);
-
-	for (const text of boldTexts) {
-		if (!fragTypes.has(text.toLowerCase()) && text.length > 1) {
-			diagram.title = text;
-			break;
+function extractTitle(svgText, diagram) {
+	// Title is in the <title> element at the SVG root
+	const titleMatch = svgText.match(/<title>([^<]+)<\/title>/);
+	if (titleMatch) {
+		const titleText = titleMatch[1].trim();
+		// PlantUML always has a <title> — skip generic ones like "untitled"
+		if (titleText && titleText.toLowerCase() !== 'untitled') {
+			diagram.title = titleText;
 		}
 	}
 }

@@ -73,7 +73,13 @@ export class NormalizedDiagram {
 
 function normalizeText(s) {
 	if (!s) return '';
-	return s.replace(/\s+/g, ' ').trim().toLowerCase();
+	return s
+		.replace(/<br\s*\/?>/gi, ' ')    // <br> → space
+		.replace(/\\n/g, ' ')             // literal \n → space
+		.replace(/\n/g, ' ')              // actual newlines → space
+		.replace(/\s+/g, ' ')
+		.trim()
+		.toLowerCase();
 }
 
 function textsMatch(a, b) {
@@ -96,10 +102,10 @@ export function matchDiagrams(ref, cand) {
 	// Match messages by label + from + to (in order)
 	result.messages = matchMessages(ref.messages, cand.messages);
 
-	// Match fragments by type + label
+	// Match fragments by type (primary), not label (label differences are secondary)
 	result.fragments = matchByKey(
 		ref.fragments, cand.fragments,
-		f => normalizeText(f.type) + '|' + normalizeText(f.label)
+		f => normalizeText(f.type)
 	);
 
 	// Match notes by text content

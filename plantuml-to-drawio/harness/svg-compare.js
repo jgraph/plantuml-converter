@@ -14,9 +14,9 @@
  */
 
 import { readFileSync } from 'fs';
-import { extractFromPlantUmlSvg } from './extract-plantuml-svg.js';
-import { extractFromDrawioXml } from './extract-drawio-xml.js';
-import { matchDiagrams, diffDiagrams, buildReport } from './normalize.js';
+import { extractFromPlantUmlSvg } from './extract-plantuml-svg-sequence.js';
+import { extractFromDrawioXml } from './extract-drawio-xml-sequence.js';
+import { matchDiagrams, diffDiagrams, buildReport } from './normalize-sequence.js';
 
 /**
  * Compare a PlantUML SVG (reference) against a draw.io XML (candidate).

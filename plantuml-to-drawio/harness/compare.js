@@ -1,9 +1,9 @@
 /**
  * compare.js
  *
- * Orchestrator for the visual comparison harness.
+ * Orchestrator for the comparison harness.
  * Takes .puml files, runs both PlantUML and the converter,
- * exports both to PNG, and calls the vision comparison.
+ * and compares results structurally (SVG) and/or visually (Vision API).
  *
  * Usage:
  *   node harness/compare.js [options] [puml-files...]
@@ -11,15 +11,19 @@
  * Options:
  *   --type <type>       Diagram type for test discovery (default: sequence)
  *   --output-dir <dir>  Output directory (default: outputs/)
- *   --no-vision         Skip vision comparison (just generate PNGs)
+ *   --png               Also export PNGs for visual inspection
+ *   --vision            Run vision API comparison (implies --png)
+ *   --no-structural     Skip structural comparison (only with --vision)
  *   --verbose           Show detailed output
+ *
+ * Default mode (no flags): structural comparison only. Free, deterministic.
  *
  * If no puml files are specified, discovers all .puml files under tests/<type>/.
  *
  * Environment:
- *   PLANTUML_JAR   - Path to PlantUML jar (default: auto-detect from build/libs/)
- *   DRAWIO_CMD     - Path to draw.io executable (passed through to export-drawio.sh)
- *   ANTHROPIC_API_KEY - Required for vision comparison
+ *   PLANTUML_JAR       - Path to PlantUML jar (default: auto-detect from build/libs/)
+ *   DRAWIO_CMD         - Path to draw.io executable (passed through to export-drawio.sh)
+ *   ANTHROPIC_API_KEY  - Required only for --vision mode
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, renameSync } from 'fs';
@@ -27,7 +31,7 @@ import { execSync } from 'child_process';
 import { dirname, join, basename, resolve, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { convert } from '../PlantUmlImporter.js';
-import { compareImages } from './vision-compare.js';
+import { compareSvgToDrawio } from './svg-compare.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,7 +44,9 @@ function parseArgs(argv) {
 	const args = {
 		type: 'sequence',
 		outputDir: join(PROJECT_ROOT, 'outputs'),
-		vision: true,
+		structural: true,
+		png: false,
+		vision: false,
 		verbose: false,
 		files: [],
 	};
@@ -52,7 +58,15 @@ function parseArgs(argv) {
 			args.type = argv[++i];
 		} else if (arg === '--output-dir' && i + 1 < argv.length) {
 			args.outputDir = resolve(argv[++i]);
+		} else if (arg === '--png') {
+			args.png = true;
+		} else if (arg === '--vision') {
+			args.vision = true;
+			args.png = true; // vision implies png
+		} else if (arg === '--no-structural') {
+			args.structural = false;
 		} else if (arg === '--no-vision') {
+			// Backward compat: --no-vision is now the default
 			args.vision = false;
 		} else if (arg === '--verbose') {
 			args.verbose = true;
@@ -139,12 +153,12 @@ function runConverter(pumlText, drawioOutputPath) {
 	return result;
 }
 
-function runDrawioExport(drawioPath, pngOutputPath) {
+function runDrawioExport(drawioPath, outputPath) {
 	const exportScript = join(__dirname, 'export-drawio.sh');
-	mkdirSync(dirname(pngOutputPath), { recursive: true });
+	mkdirSync(dirname(outputPath), { recursive: true });
 
 	try {
-		execSync(`"${exportScript}" "${drawioPath}" "${pngOutputPath}"`, {
+		execSync(`"${exportScript}" "${drawioPath}" "${outputPath}"`, {
 			stdio: ['pipe', 'pipe', 'pipe'],
 			timeout: 30000,
 		});
@@ -153,8 +167,40 @@ function runDrawioExport(drawioPath, pngOutputPath) {
 		throw new Error(`draw.io export failed: ${stderr || err.message}`);
 	}
 
-	if (!existsSync(pngOutputPath)) {
-		throw new Error(`draw.io export produced no output: ${pngOutputPath}`);
+	if (!existsSync(outputPath)) {
+		throw new Error(`draw.io export produced no output: ${outputPath}`);
+	}
+}
+
+/**
+ * Run PlantUML to generate SVG or PNG.
+ * @param {string} format - 'svg' or 'png'
+ */
+function runPlantUml(pumlPath, outputPath, jarPath, format) {
+	mkdirSync(dirname(outputPath), { recursive: true });
+
+	const formatFlag = format === 'svg' ? '-tsvg' : '-tpng';
+	try {
+		execSync(`java -jar "${jarPath}" ${formatFlag} -o "${dirname(outputPath)}" "${pumlPath}"`, {
+			stdio: ['pipe', 'pipe', 'pipe'],
+			timeout: 30000,
+		});
+	} catch (err) {
+		const stderr = err.stderr?.toString() || '';
+		throw new Error(`PlantUML export failed: ${stderr || err.message}`);
+	}
+
+	// PlantUML outputs with the input file's basename
+	const ext = format === 'svg' ? '.svg' : '.png';
+	const expectedName = basename(pumlPath, '.puml') + ext;
+	const actualPath = join(dirname(outputPath), expectedName);
+
+	if (actualPath !== outputPath && existsSync(actualPath)) {
+		renameSync(actualPath, outputPath);
+	}
+
+	if (!existsSync(outputPath)) {
+		throw new Error(`PlantUML export produced no output at: ${outputPath}`);
 	}
 }
 
@@ -165,15 +211,25 @@ async function processTestCase(pumlPath, args, jarPath) {
 	const typeOutputDir = join(args.outputDir, args.type);
 	const log = args.verbose ? console.log : () => {};
 
+	// Count total steps for progress display
+	let totalSteps = 1; // convert
+	if (args.structural) totalSteps += 2; // SVG gen + structural compare
+	if (args.png) totalSteps += 2; // drawio export + plantuml png
+	if (args.vision) totalSteps += 1; // vision compare
+
 	log(`\n  Processing: ${testName}`);
 
 	const result = {
 		name: testName,
 		pumlPath: pumlPath,
 		steps: {},
-		report: null,
+		report: null,       // structural report (primary)
+		visionReport: null, // vision report (secondary)
 		error: null,
 	};
+
+	let step = 0;
+	const logStep = (msg) => log(`    [${++step}/${totalSteps}] ${msg}`);
 
 	try {
 		// 1. Read the .puml file
@@ -181,39 +237,59 @@ async function processTestCase(pumlPath, args, jarPath) {
 
 		// 2. Run our converter → .drawio
 		const drawioPath = join(typeOutputDir, `${testName}.drawio`);
-		log(`    [1/4] Converting to .drawio ...`);
+		logStep('Converting to .drawio ...');
 		runConverter(pumlText, drawioPath);
 		result.steps.convert = 'ok';
-		log(`    [1/4] Done: ${relative(PROJECT_ROOT, drawioPath)}`);
+		log(`    [${step}/${totalSteps}] Done: ${relative(PROJECT_ROOT, drawioPath)}`);
 
-		// 3. Export .drawio → PNG (candidate)
-		const candidatePath = join(typeOutputDir, `${testName}-candidate.png`);
-		log(`    [2/4] Exporting draw.io to PNG ...`);
-		runDrawioExport(drawioPath, candidatePath);
-		result.steps.drawioExport = 'ok';
-		log(`    [2/4] Done: ${relative(PROJECT_ROOT, candidatePath)}`);
+		// 3. Structural comparison (default): .puml → SVG, then diff against .drawio XML
+		if (args.structural) {
+			const svgPath = join(typeOutputDir, `${testName}-reference.svg`);
+			logStep('Generating PlantUML reference SVG ...');
+			runPlantUml(pumlPath, svgPath, jarPath, 'svg');
+			result.steps.plantumlSvg = 'ok';
+			log(`    [${step}/${totalSteps}] Done: ${relative(PROJECT_ROOT, svgPath)}`);
 
-		// 4. Run PlantUML → PNG (reference)
-		const referencePath = join(typeOutputDir, `${testName}-reference.png`);
-		log(`    [3/4] Generating PlantUML reference PNG ...`);
-		await runPlantUmlAsync(pumlPath, referencePath, jarPath);
-		result.steps.plantumlExport = 'ok';
-		log(`    [3/4] Done: ${relative(PROJECT_ROOT, referencePath)}`);
-
-		// 5. Vision comparison (if enabled)
-		if (args.vision) {
-			log(`    [4/4] Running vision comparison ...`);
-			const report = await compareImages(referencePath, candidatePath);
+			logStep('Running structural comparison ...');
+			const svgText = readFileSync(svgPath, 'utf-8');
+			const drawioXml = readFileSync(drawioPath, 'utf-8');
+			const report = compareSvgToDrawio(svgText, drawioXml);
 			result.report = report;
-			result.steps.visionCompare = 'ok';
+			result.steps.structural = 'ok';
 
 			// Write individual report
 			const reportPath = join(typeOutputDir, `${testName}-report.json`);
 			writeFileSync(reportPath, JSON.stringify(report, null, 2));
-			log(`    [4/4] Done: score=${report.score}`);
-		} else {
-			log(`    [4/4] Skipped (--no-vision)`);
-			result.steps.visionCompare = 'skipped';
+			log(`    [${step}/${totalSteps}] Done: score=${report.score}`);
+		}
+
+		// 4. PNG exports (for visual inspection or vision comparison)
+		if (args.png) {
+			const candidatePath = join(typeOutputDir, `${testName}-candidate.png`);
+			logStep('Exporting draw.io to PNG ...');
+			runDrawioExport(drawioPath, candidatePath);
+			result.steps.drawioExport = 'ok';
+			log(`    [${step}/${totalSteps}] Done: ${relative(PROJECT_ROOT, candidatePath)}`);
+
+			const referencePngPath = join(typeOutputDir, `${testName}-reference.png`);
+			logStep('Generating PlantUML reference PNG ...');
+			runPlantUml(pumlPath, referencePngPath, jarPath, 'png');
+			result.steps.plantumlPng = 'ok';
+			log(`    [${step}/${totalSteps}] Done: ${relative(PROJECT_ROOT, referencePngPath)}`);
+
+			// 5. Vision comparison (if enabled)
+			if (args.vision) {
+				logStep('Running vision comparison ...');
+				// Lazy-import vision-compare since it's only needed in this mode
+				const { compareImages } = await import('./vision-compare.js');
+				const visionReport = await compareImages(referencePngPath, candidatePath);
+				result.visionReport = visionReport;
+				result.steps.visionCompare = 'ok';
+
+				const visionReportPath = join(typeOutputDir, `${testName}-vision-report.json`);
+				writeFileSync(visionReportPath, JSON.stringify(visionReport, null, 2));
+				log(`    [${step}/${totalSteps}] Done: vision score=${visionReport.score}`);
+			}
 		}
 	} catch (err) {
 		result.error = err.message;
@@ -223,40 +299,18 @@ async function processTestCase(pumlPath, args, jarPath) {
 	return result;
 }
 
-/**
- * Async wrapper for PlantUML execution to handle the rename logic.
- */
-async function runPlantUmlAsync(pumlPath, pngOutputPath, jarPath) {
-	mkdirSync(dirname(pngOutputPath), { recursive: true });
-
-	try {
-		execSync(`java -jar "${jarPath}" -tpng -o "${dirname(pngOutputPath)}" "${pumlPath}"`, {
-			stdio: ['pipe', 'pipe', 'pipe'],
-			timeout: 30000,
-		});
-	} catch (err) {
-		const stderr = err.stderr?.toString() || '';
-		throw new Error(`PlantUML export failed: ${stderr || err.message}`);
-	}
-
-	// PlantUML outputs with the input file's basename
-	const expectedName = basename(pumlPath, '.puml') + '.png';
-	const actualPath = join(dirname(pngOutputPath), expectedName);
-
-	if (actualPath !== pngOutputPath && existsSync(actualPath)) {
-		renameSync(actualPath, pngOutputPath);
-	}
-
-	if (!existsSync(pngOutputPath)) {
-		throw new Error(`PlantUML export produced no output at: ${pngOutputPath}`);
-	}
-}
-
 // ── Summary formatting ─────────────────────────────────────────────────────
 
-function printSummary(results) {
+function printSummary(results, args) {
 	console.log('\n' + '='.repeat(70));
 	console.log('COMPARISON RESULTS');
+	if (args.structural && !args.vision) {
+		console.log('  Mode: structural (SVG-based, deterministic)');
+	} else if (args.vision && !args.structural) {
+		console.log('  Mode: vision (Anthropic API)');
+	} else if (args.vision && args.structural) {
+		console.log('  Mode: structural + vision');
+	}
 	console.log('='.repeat(70));
 
 	let passCount = 0;
@@ -266,24 +320,26 @@ function printSummary(results) {
 	let skippedCount = 0;
 
 	for (const r of results) {
+		// Use structural report as primary score
+		const report = r.report || r.visionReport;
 		let status;
 		if (r.error) {
 			status = 'ERROR';
 			errorCount++;
-		} else if (r.report === null) {
+		} else if (report === null) {
 			status = 'SKIP';
 			skippedCount++;
-		} else if (r.report.score === 'pass') {
+		} else if (report.score === 'pass') {
 			status = 'PASS';
 			passCount++;
-		} else if (r.report.score === 'needs_work') {
+		} else if (report.score === 'needs_work') {
 			status = 'WARN';
 			needsWorkCount++;
-		} else if (r.report.score === 'fail') {
+		} else if (report.score === 'fail') {
 			status = 'FAIL';
 			failCount++;
 		} else {
-			status = r.report.score?.toUpperCase() || 'UNKNOWN';
+			status = report.score?.toUpperCase() || 'UNKNOWN';
 			errorCount++;
 		}
 
@@ -292,14 +348,19 @@ function printSummary(results) {
 
 		if (r.error) {
 			console.log(`          ${r.error}`);
-		} else if (r.report) {
-			const b = r.report.blocking?.length || 0;
-			const i = r.report.important?.length || 0;
-			const c = r.report.cosmetic?.length || 0;
+		} else if (report) {
+			const b = report.blocking?.length || 0;
+			const i = report.important?.length || 0;
+			const c = report.cosmetic?.length || 0;
 			console.log(`          blocking: ${b}  important: ${i}  cosmetic: ${c}`);
-			if (r.report.summary) {
-				console.log(`          ${r.report.summary}`);
+			if (report.summary) {
+				console.log(`          ${report.summary}`);
 			}
+		}
+
+		// Show vision report alongside if both modes active
+		if (r.visionReport && r.report) {
+			console.log(`          [vision] score=${r.visionReport.score}`);
 		}
 	}
 
@@ -316,10 +377,15 @@ function printSummary(results) {
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
 
-	console.log(`PlantUML to draw.io — Visual Comparison Harness`);
+	const modes = [];
+	if (args.structural) modes.push('structural');
+	if (args.png) modes.push('png');
+	if (args.vision) modes.push('vision');
+
+	console.log(`PlantUML to draw.io — Comparison Harness`);
 	console.log(`  Diagram type: ${args.type}`);
 	console.log(`  Output dir:   ${relative(PROJECT_ROOT, args.outputDir) || args.outputDir}`);
-	console.log(`  Vision:       ${args.vision ? 'enabled' : 'disabled'}`);
+	console.log(`  Mode:         ${modes.join(' + ') || 'none'}`);
 
 	// Find PlantUML jar
 	const jarPath = findPlantUmlJar();
@@ -349,7 +415,7 @@ async function main() {
 	}
 
 	// Print summary
-	const summary = printSummary(results);
+	const summary = printSummary(results, args);
 
 	// Write summary report
 	const reportsDir = join(args.outputDir, 'reports');
@@ -358,16 +424,19 @@ async function main() {
 	const summaryReport = {
 		timestamp: new Date().toISOString(),
 		diagramType: args.type,
-		visionEnabled: args.vision,
+		mode: modes.join('+'),
 		counts: summary,
-		results: results.map((r) => ({
-			name: r.name,
-			score: r.report?.score || (r.error ? 'error' : 'skipped'),
-			blocking: r.report?.blocking?.length || 0,
-			important: r.report?.important?.length || 0,
-			cosmetic: r.report?.cosmetic?.length || 0,
-			summary: r.report?.summary || r.error || null,
-		})),
+		results: results.map((r) => {
+			const report = r.report || r.visionReport;
+			return {
+				name: r.name,
+				score: report?.score || (r.error ? 'error' : 'skipped'),
+				blocking: report?.blocking?.length || 0,
+				important: report?.important?.length || 0,
+				cosmetic: report?.cosmetic?.length || 0,
+				summary: report?.summary || r.error || null,
+			};
+		}),
 	};
 
 	const summaryPath = join(reportsDir, 'summary.json');

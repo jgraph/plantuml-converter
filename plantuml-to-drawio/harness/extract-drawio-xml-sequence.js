@@ -13,7 +13,7 @@ import {
 	NFragment,
 	NNote,
 	NDivider
-} from './normalize.js';
+} from './normalize-sequence.js';
 
 // ── Cell parsing ──────────────────────────────────────────────────────────
 
@@ -340,23 +340,34 @@ export function extractFromDrawioXml(xmlText) {
 	}
 
 	// ── Extract fragments ──
+	const fragTypes = ['alt', 'loop', 'opt', 'par', 'break', 'critical', 'group', 'ref'];
+
 	for (const cell of cells) {
-		if (isFragment(cell)) {
-			// Fragment type/label from the value attribute
-			const value = cell.value || '';
-			diagram.fragments.push(new NFragment(value.toLowerCase(), value, []));
-		} else if (isFragmentLabel(cell)) {
-			// Fragment label cells contain the type keyword (alt, loop, etc.)
+		if (isFragmentLabel(cell)) {
+			// Fragment label cells have values like "alt [condition]" or just "alt"
 			const value = cell.value || '';
 			const lower = value.toLowerCase();
-			const fragTypes = ['alt', 'loop', 'opt', 'par', 'break', 'critical', 'group', 'ref'];
-			if (fragTypes.includes(lower)) {
-				// Check if we already have this fragment from the container cell
-				const exists = diagram.fragments.some(f => f.type === lower);
+			// Extract the fragment type keyword from the start of the value
+			const typeWord = lower.split(/[\s[]/)[0];
+			if (fragTypes.includes(typeWord)) {
+				// Extract condition from brackets if present
+				const condMatch = value.match(/\[([^\]]+)\]/);
+				const condition = condMatch ? condMatch[1] : '';
+				const exists = diagram.fragments.some(f => f.type === typeWord);
 				if (!exists) {
-					diagram.fragments.push(new NFragment(lower, '', []));
+					diagram.fragments.push(new NFragment(typeWord, condition, []));
 				}
 			}
+		} else if (isReference(cell)) {
+			// Reference cells (ref over ...) — treat as "ref" fragment
+			const exists = diagram.fragments.some(f => f.type === 'ref');
+			if (!exists) {
+				diagram.fragments.push(new NFragment('ref', cell.value || '', []));
+			}
+		} else if (isFragment(cell)) {
+			// Fragment container rects — only add if we didn't already find the type
+			// from a label cell. These often have value="undefined" or empty.
+			// Skip — the label cells above handle fragment type extraction.
 		}
 	}
 

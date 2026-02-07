@@ -2,9 +2,10 @@
 # export-drawio.sh
 #
 # draw.io CLI export wrapper.
-# Converts a .drawio XML file to PNG using the draw.io desktop CLI.
+# Converts a .drawio XML file to PNG or SVG using the draw.io desktop CLI.
+# Output format is detected from the output file extension.
 #
-# Usage: ./harness/export-drawio.sh <input.drawio> <output.png>
+# Usage: ./harness/export-drawio.sh <input.drawio> <output.png|output.svg>
 #
 # Environment:
 #   DRAWIO_CMD - Path to draw.io executable (default: macOS app bundle path)
@@ -14,7 +15,7 @@ set -euo pipefail
 DRAWIO_CMD="${DRAWIO_CMD:-/Applications/draw.io.app/Contents/MacOS/draw.io}"
 
 if [ $# -lt 2 ]; then
-	echo "Usage: $0 <input.drawio> <output.png>" >&2
+	echo "Usage: $0 <input.drawio> <output.png|output.svg>" >&2
 	exit 1
 fi
 
@@ -32,8 +33,26 @@ if ! command -v "$DRAWIO_CMD" &>/dev/null && [ ! -x "$DRAWIO_CMD" ]; then
 	exit 1
 fi
 
+# Detect format from output file extension
+EXT="${OUTPUT##*.}"
+case "$EXT" in
+	svg)
+		FORMAT="svg"
+		EXTRA_ARGS=""
+		;;
+	png)
+		FORMAT="png"
+		# Export PNGs at 2x scale for better readability
+		EXTRA_ARGS="--scale 2"
+		;;
+	*)
+		echo "Error: Unsupported output format: .$EXT (use .png or .svg)" >&2
+		exit 1
+		;;
+esac
+
 # Ensure output directory exists
 mkdir -p "$(dirname "$OUTPUT")"
 
-# Export to PNG at 2x scale for better vision comparison readability
-"$DRAWIO_CMD" --export --format png --scale 2 --output "$OUTPUT" "$INPUT"
+# Export
+"$DRAWIO_CMD" --export --format "$FORMAT" $EXTRA_ARGS --output "$OUTPUT" "$INPUT"
