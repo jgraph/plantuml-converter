@@ -70,7 +70,9 @@ const LAYOUT = {
 	SELF_MESSAGE_WIDTH: 30,   // Width of self-message loop
 	SELF_MESSAGE_HEIGHT: 20,  // Height of self-message loop
 	ACTOR_WIDTH: 40,
-	ACTOR_HEIGHT: 50
+	ACTOR_HEIGHT: 50,
+	ICON_SHAPE_WIDTH: 50,     // Width for boundary/control/entity icon shapes
+	ICON_SHAPE_HEIGHT: 50     // Height for boundary/control/entity icon shapes
 };
 
 // ── Style definitions ──────────────────────────────────────────────────────
@@ -94,24 +96,27 @@ const STYLES = {
 	}),
 
 	boundary: buildStyle({
-		shape: 'mxgraph.sysml.port',
-		whiteSpace: 'wrap',
+		shape: 'umlBoundary',
+		verticalLabelPosition: 'bottom',
+		verticalAlign: 'top',
 		html: 1,
 		fillColor: '#dae8fc',
 		strokeColor: '#6c8ebf'
 	}),
 
 	control: buildStyle({
-		shape: 'mxgraph.flowchart.on-page_reference',
-		whiteSpace: 'wrap',
+		shape: 'umlControl',
+		verticalLabelPosition: 'bottom',
+		verticalAlign: 'top',
 		html: 1,
 		fillColor: '#dae8fc',
 		strokeColor: '#6c8ebf'
 	}),
 
 	entity: buildStyle({
-		shape: 'mxgraph.er.entity',
-		whiteSpace: 'wrap',
+		shape: 'umlEntity',
+		verticalLabelPosition: 'bottom',
+		verticalAlign: 'top',
 		html: 1,
 		fillColor: '#dae8fc',
 		strokeColor: '#6c8ebf'
@@ -373,6 +378,9 @@ export class SequenceEmitter {
 		if (p.type === ParticipantType.ACTOR) {
 			return LAYOUT.ACTOR_WIDTH;
 		}
+		if (this._isIconShape(p.type)) {
+			return LAYOUT.ICON_SHAPE_WIDTH;
+		}
 		// Estimate width from display name length
 		const textWidth = (p.displayName || p.code).length * 8 + 20;
 		return Math.max(LAYOUT.PARTICIPANT_WIDTH, textWidth);
@@ -382,7 +390,20 @@ export class SequenceEmitter {
 		if (p.type === ParticipantType.ACTOR) {
 			return LAYOUT.ACTOR_HEIGHT;
 		}
+		if (this._isIconShape(p.type)) {
+			return LAYOUT.ICON_SHAPE_HEIGHT;
+		}
 		return LAYOUT.PARTICIPANT_HEIGHT;
+	}
+
+	/**
+	 * Whether a participant type renders as a UML icon (circle-based)
+	 * rather than a labeled box.
+	 */
+	_isIconShape(type) {
+		return type === ParticipantType.BOUNDARY ||
+			type === ParticipantType.CONTROL ||
+			type === ParticipantType.ENTITY;
 	}
 
 	// ── Emit participant headers ─────────────────────────────────────────

@@ -448,23 +448,27 @@ export class SequenceParser {
 	// ── Notes ────────────────────────────────────────────────────────────
 
 	_parseNoteSingleLine(line) {
-		// note left/right/over [of] participant : text
+		// note left/right/over [of] participant [, participant2] : text
 		const m = line.match(
-			/^(note|hnote|rnote)\s+(left|right|over)\s+(?:of\s+)?([\w.@]+|"[^"]+")\s*(?:(#\w+)\s*)?:\s*(.*)$/i
+			/^(note|hnote|rnote)\s+(left|right|over)\s+(?:of\s+)?([\w.@]+|"[^"]+")\s*(?:,\s*([\w.@]+|"[^"]+"))?\s*(?:(#\w+)\s*)?:\s*(.*)$/i
 		);
 		if (!m) return false;
 
 		const styleStr = m[1].toLowerCase();
 		const posStr = m[2].toLowerCase();
-		const code = m[3].replace(/"/g, '');
-		const color = m[4] || null;
-		const text = m[5].trim();
+		const code1 = m[3].replace(/"/g, '');
+		const code2 = m[4] ? m[4].replace(/"/g, '') : null;
+		const color = m[5] || null;
+		const text = m[6].trim();
 
 		const style = this._noteStyleFromStr(styleStr);
 		const position = this._notePositionFromStr(posStr);
 
-		this.diagram.getOrCreateParticipant(code);
-		const note = new Note([code], position, text, style);
+		this.diagram.getOrCreateParticipant(code1);
+		if (code2) this.diagram.getOrCreateParticipant(code2);
+
+		const participants = code2 ? [code1, code2] : [code1];
+		const note = new Note(participants, position, text, style);
 		note.color = color;
 		this._addElement(note);
 
