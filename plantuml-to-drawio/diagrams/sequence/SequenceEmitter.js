@@ -53,7 +53,7 @@ const LAYOUT = {
 	PARTICIPANT_WIDTH: 120,
 	PARTICIPANT_HEIGHT: 40,
 	PARTICIPANT_GAP: 40,       // Horizontal gap between participants
-	LIFELINE_TOP_MARGIN: 50,   // Gap between participant box and first element
+	LIFELINE_TOP_MARGIN: 30,   // Gap between participant box and first element
 	ROW_HEIGHT: 40,            // Vertical step per message/element
 	ACTIVATION_WIDTH: 10,      // Width of activation bar (draw.io standard)
 	NOTE_WIDTH: 120,
@@ -311,6 +311,10 @@ export class SequenceEmitter {
 		// Activation tracking
 		this.activeActivations = new Map(); // code → [{id, startY}]
 
+		// Participant group containers — each participant's header, lifeline,
+		// footer and activation bars are grouped so they move together in draw.io
+		this.participantGroupIds = new Map(); // code → group cell id
+
 		// Track the Y position of the last emitted message arrow,
 		// so activation bars can start at the correct vertical position
 		this.lastMessageY = 0;
@@ -330,50 +334,59 @@ export class SequenceEmitter {
 		// 1. Calculate participant positions
 		this._layoutParticipants();
 
-		// 2. Emit participant headers
+		// 2. Create participant group containers (deferred — sized after layout)
+		//    Groups will be emitted in step 8 after we know the final height.
+
+		// 3. Emit participant headers
 		this._emitParticipantHeaders();
 
 		// Start below participant headers
 		this.currentY += LAYOUT.PARTICIPANT_HEIGHT + LAYOUT.LIFELINE_TOP_MARGIN;
 		const lifelineStartY = this.currentY;
 
-		// 3. Process elements in order
+		// 4. Process elements in order
 		this._emitElements(this.diagram.elements);
 
-		// 4. Add some bottom margin
+		// 5. Add some bottom margin
 		this.currentY += LAYOUT.ROW_HEIGHT;
 
-		// 5. Emit lifelines (from header bottom to current Y)
+		// 6. Emit lifelines (from header bottom to current Y)
 		this._emitLifelines(lifelineStartY, this.currentY);
 
-		// 6. Close any remaining activations
+		// 7. Close any remaining activations
 		this._closeAllActivations();
 
-		// 7. Emit bottom participant boxes (footers)
+		// 8. Emit bottom participant boxes (footers)
 		this._emitParticipantFooters();
 
-		// 8. Update diagram height after footers
+		// 9. Update diagram height after footers
 		this.diagramHeight = this.currentY;
 
-		// 9. Emit boxes (behind everything else)
+		// 10. Now emit participant group containers with final height
+		this._emitParticipantGroups();
+
+		// 11. Emit boxes (behind everything else)
 		const boxCells = this._emitBoxes();
 
-		// 10. Sort for z-order:
+		// 12. Sort for z-order:
 		//   Layer 0: boxes (background)
-		//   Layer 1: lifelines (dashed vertical lines)
-		//   Layer 2: activation bars (opaque white, covers lifelines)
-		//   Layer 3: other vertices (participant headers, notes, fragments, destroy markers)
-		//   Layer 4: message edges (arrows between participants)
+		//   Layer 1: participant group containers (must precede their children)
+		//   Layer 2: lifelines (dashed vertical lines, inside groups)
+		//   Layer 3: activation bars (opaque white, covers lifelines, inside groups)
+		//   Layer 4: other vertices (participant headers, notes, fragments, destroy markers)
+		//   Layer 5: message edges (arrows between participants)
 		const isEdge = (xml) => /\bedge="1"/.test(xml);
 		const isLifeline = (xml) => isEdge(xml) && /endArrow=none/.test(xml) && /dashed=1/.test(xml);
 		const isActivation = (xml) => !isEdge(xml) && /targetShapes=umlLifeline/.test(xml);
+		const isGroup = (xml) => !isEdge(xml) && /container=1/.test(xml);
 
+		const groups = this.cells.filter(xml => isGroup(xml));
 		const lifelines = this.cells.filter(xml => isLifeline(xml));
 		const activations = this.cells.filter(xml => isActivation(xml));
-		const otherVertices = this.cells.filter(xml => !isEdge(xml) && !isActivation(xml));
+		const otherVertices = this.cells.filter(xml => !isEdge(xml) && !isActivation(xml) && !isGroup(xml));
 		const messageEdges = this.cells.filter(xml => isEdge(xml) && !isLifeline(xml));
 
-		return [...boxCells, ...lifelines, ...activations, ...otherVertices, ...messageEdges];
+		return [...boxCells, ...groups, ...lifelines, ...activations, ...otherVertices, ...messageEdges];
 	}
 
 	// ── Participant layout ───────────────────────────────────────────────
@@ -391,6 +404,9 @@ export class SequenceEmitter {
 				centerX: centerX,
 				width: width
 			});
+
+			// Pre-allocate group ID for this participant
+			this.participantGroupIds.set(p.code, this.nextId());
 
 			x += width + LAYOUT.PARTICIPANT_GAP;
 		}
@@ -430,6 +446,37 @@ export class SequenceEmitter {
 			type === ParticipantType.ENTITY;
 	}
 
+	// ── Participant groups ───────────────────────────────────────────────
+
+	/**
+	 * Emit invisible group container cells for each participant.
+	 * Each group contains the header, lifeline, footer, and activation bars.
+	 * This allows moving a participant column as a unit in draw.io.
+	 */
+	_emitParticipantGroups() {
+		for (const [code, p] of this.diagram.participants) {
+			const pos = this.participantPositions.get(code);
+			const groupId = this.participantGroupIds.get(code);
+			if (!pos || !groupId) continue;
+
+			this.cells.push(buildCell({
+				id: groupId,
+				style: buildStyle({
+					group: 1,
+					container: 1,
+					collapsible: 0,
+					recursiveResize: 0,
+					fillColor: 'none',
+					strokeColor: 'none',
+					noLabel: 1
+				}),
+				vertex: true,
+				parent: this.parentId,
+				geometry: geom(pos.x, LAYOUT.MARGIN_TOP, pos.width, this.diagramHeight - LAYOUT.MARGIN_TOP)
+			}));
+		}
+	}
+
 	// ── Emit participant headers ─────────────────────────────────────────
 
 	_emitParticipantHeaders() {
@@ -457,14 +504,16 @@ export class SequenceEmitter {
 
 			const height = this._participantHeight(p);
 			const style = this._getParticipantStyle(p);
+			const groupId = this.participantGroupIds.get(code);
 
+			// Coordinates relative to group container
 			this.cells.push(buildCell({
 				id: this.nextId(),
 				value: p.displayName || p.code,
 				style: style,
 				vertex: true,
-				parent: this.parentId,
-				geometry: geom(pos.x, footerY, pos.width, height)
+				parent: groupId || this.parentId,
+				geometry: geom(0, footerY - LAYOUT.MARGIN_TOP, pos.width, height)
 			}));
 		}
 
@@ -481,6 +530,7 @@ export class SequenceEmitter {
 		const pos = this.participantPositions.get(code);
 		const id = this.nextId();
 		const height = this._participantHeight(participant);
+		const groupId = this.participantGroupIds.get(code);
 
 		let style = this._getParticipantStyle(participant);
 
@@ -489,13 +539,14 @@ export class SequenceEmitter {
 			style += 'labelPosition=center;verticalLabelPosition=bottom;align=center;verticalAlign=top;';
 		}
 
+		// Coordinates relative to group container (x=0, y relative to group top)
 		this.cells.push(buildCell({
 			id: id,
 			value: participant.displayName || participant.code,
 			style: style,
 			vertex: true,
-			parent: this.parentId,
-			geometry: geom(pos.x, y, pos.width, height)
+			parent: groupId || this.parentId,
+			geometry: geom(0, y - LAYOUT.MARGIN_TOP, pos.width, height)
 		}));
 
 		this.participantHeaderIds.set(code, id);
@@ -515,17 +566,20 @@ export class SequenceEmitter {
 		for (const [code] of this.diagram.participants) {
 			const pos = this.participantPositions.get(code);
 			const id = this.nextId();
+			const groupId = this.participantGroupIds.get(code);
 
 			// Created participants start their lifeline from below their header
 			const lineStartY = this.lifelineStartYOverrides.get(code) || startY;
 
+			// Coordinates relative to group container
+			const relX = pos.width / 2; // centerX within group
 			this.cells.push(buildCell({
 				id: id,
 				style: STYLES.lifeline,
 				edge: true,
-				parent: this.parentId,
-				sourcePoint: { x: pos.centerX, y: lineStartY },
-				targetPoint: { x: pos.centerX, y: endY }
+				parent: groupId || this.parentId,
+				sourcePoint: { x: relX, y: lineStartY - LAYOUT.MARGIN_TOP },
+				targetPoint: { x: relX, y: endY - LAYOUT.MARGIN_TOP }
 			}));
 
 			this.lifelineIds.set(code, id);
@@ -880,8 +934,10 @@ export class SequenceEmitter {
 		const pos = this.participantPositions.get(code);
 		if (!pos) return;
 
-		const x = pos.centerX - LAYOUT.ACTIVATION_WIDTH / 2;
+		// Coordinates relative to group container
+		const relX = pos.width / 2 - LAYOUT.ACTIVATION_WIDTH / 2;
 		const height = this.currentY - activation.startY;
+		const groupId = this.participantGroupIds.get(code);
 
 		let style = STYLES.activation;
 		if (activation.color) {
@@ -892,8 +948,8 @@ export class SequenceEmitter {
 			id: activation.id,
 			style: style,
 			vertex: true,
-			parent: this.parentId,
-			geometry: geom(x, activation.startY, LAYOUT.ACTIVATION_WIDTH, Math.max(height, 10))
+			parent: groupId || this.parentId,
+			geometry: geom(relX, activation.startY - LAYOUT.MARGIN_TOP, LAYOUT.ACTIVATION_WIDTH, Math.max(height, 10))
 		}));
 	}
 
@@ -905,15 +961,17 @@ export class SequenceEmitter {
 
 		const id = this.nextId();
 		const size = 16;
+		const groupId = this.participantGroupIds.get(code);
 
+		// Coordinates relative to group container
 		this.cells.push(buildCell({
 			id: id,
 			style: STYLES.destroy,
 			vertex: true,
-			parent: this.parentId,
+			parent: groupId || this.parentId,
 			geometry: geom(
-				pos.centerX - size / 2,
-				this.currentY,
+				pos.width / 2 - size / 2,
+				this.currentY - LAYOUT.MARGIN_TOP,
 				size,
 				size
 			)
