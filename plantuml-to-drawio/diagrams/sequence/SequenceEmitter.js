@@ -43,6 +43,7 @@ import {
 	buildStyle,
 	createIdGenerator,
 	geom,
+	normalizeColor,
 	xmlEscape
 } from '../../MxBuilder.js';
 
@@ -251,12 +252,12 @@ const STYLES = {
 	}),
 
 	box: buildStyle({
-		rounded: 1,
+		rounded: 0,
 		whiteSpace: 'wrap',
 		html: 1,
-		fillColor: '#dae8fc',
-		strokeColor: '#6c8ebf',
-		opacity: 30,
+		fillColor: '#f0f5ff',
+		strokeColor: '#cccccc',
+		strokeWidth: 1,
 		verticalAlign: 'top',
 		align: 'center',
 		spacingTop: 2
@@ -458,7 +459,7 @@ export class SequenceEmitter {
 	_getParticipantStyle(p) {
 		let style = STYLES[p.type] || STYLES.participant;
 		if (p.color) {
-			style = style.replace(/fillColor=[^;]+/, `fillColor=${p.color}`);
+			style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(p.color)}`);
 		}
 		return style;
 	}
@@ -714,8 +715,8 @@ export class SequenceEmitter {
 
 		// Color
 		if (arrow.color) {
-			parts.strokeColor = arrow.color;
-			parts.fontColor = arrow.color;
+			parts.strokeColor = normalizeColor(arrow.color);
+			parts.fontColor = normalizeColor(arrow.color);
 		}
 
 		// End arrow head
@@ -824,7 +825,7 @@ export class SequenceEmitter {
 
 		let style = STYLES.activation;
 		if (activation.color) {
-			style = style.replace(/fillColor=[^;]+/, `fillColor=${activation.color}`);
+			style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(activation.color)}`);
 		}
 
 		this.cells.push(buildCell({
@@ -880,7 +881,7 @@ export class SequenceEmitter {
 		}
 
 		if (note.color) {
-			style = style.replace(/fillColor=[^;]+/, `fillColor=${note.color}`);
+			style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(note.color)}`);
 		}
 
 		let x, y, width, height;
@@ -952,7 +953,7 @@ export class SequenceEmitter {
 		}
 
 		if (noteOnArrow.color) {
-			style = style.replace(/fillColor=[^;]+/, `fillColor=${noteOnArrow.color}`);
+			style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(noteOnArrow.color)}`);
 		}
 
 		// Position relative to the arrow midpoint
@@ -1027,7 +1028,7 @@ export class SequenceEmitter {
 		// Fragment container
 		let style = STYLES.fragment;
 		if (fragment.color) {
-			style = style.replace(/strokeColor=[^;]+/, `strokeColor=${fragment.color}`);
+			style = style.replace(/strokeColor=[^;]+/, `strokeColor=${normalizeColor(fragment.color)}`);
 		}
 
 		this.cells.push(buildCell({
@@ -1150,7 +1151,7 @@ export class SequenceEmitter {
 
 		let style = STYLES.reference;
 		if (ref.color) {
-			style = style.replace(/fillColor=[^;]+/, `fillColor=${ref.color}`);
+			style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(ref.color)}`);
 		}
 
 		this.cells.push(buildCell({
@@ -1191,7 +1192,7 @@ export class SequenceEmitter {
 
 			let style = STYLES.box;
 			if (box.color) {
-				style = style.replace(/fillColor=[^;]+/, `fillColor=${box.color}`);
+				style = style.replace(/fillColor=[^;]+/, `fillColor=${normalizeColor(box.color)}`);
 			}
 
 			boxCells.push(buildCell({

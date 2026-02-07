@@ -189,6 +189,104 @@ plantuml-to-drawio/
 └── generate-comprehensive-test.js     — Full-feature test diagram generator
 ```
 
+## Fix Loop Workflow
+
+When asked to "run the fix loop" or "improve the converter", follow this iterative workflow within a single Claude Code session.
+
+### Prerequisites
+
+- PlantUML jar built: `./gradlew jar` (from repo root)
+- `ANTHROPIC_API_KEY` set in environment
+- draw.io installed at `/Applications/draw.io.app` (or set `DRAWIO_CMD`)
+
+### The Loop
+
+Repeat until stop conditions are met:
+
+**Step 1 — Run the harness**
+```bash
+node plantuml-to-drawio/harness/compare.js --type <type> --verbose
+```
+Exit codes: `0` = all pass, `2` = blocking issues, `3` = important-only issues.
+
+**Step 2 — Read results**
+Read `plantuml-to-drawio/outputs/reports/summary.json`. Check:
+- All cases `"pass"`? → Done.
+- Completed 10 iterations? → Stop and report remaining issues.
+
+**Step 3 — Analyze failures**
+For each case with score `"fail"` or `"needs_work"`:
+1. Read the per-case report: `plantuml-to-drawio/outputs/<type>/<name>-report.json`
+2. Fix blocking issues first, then important
+3. Identify which converter file needs to change:
+   - Missing/wrong elements → likely the Parser (not parsing) or Emitter (not emitting)
+   - Wrong shapes/styles → Emitter (style mapping)
+   - Missing features → check the diagram type's `CLAUDE.md` for "Not Yet Emitted" items
+
+**Step 4 — Fix the converter**
+Make targeted changes. Rules:
+- Fix the **root cause**, not the symptom for one test case
+- If a fix changes layout constants or style mappings, it affects ALL test cases
+- Read the diagram type's `CLAUDE.md` before changing anything — known issues and historical bugs are documented there
+- Update that `CLAUDE.md` if you fix a known issue or discover a new gotcha
+
+**Step 5 — Run unit tests**
+```bash
+node plantuml-to-drawio/test.js
+```
+All tests must pass. If a test fails because behavior intentionally changed, update the test.
+
+**Step 6 — Log the iteration**
+```bash
+node plantuml-to-drawio/harness/iteration-log.js --description "Brief description of what you changed"
+```
+
+**Step 7 — Git commit**
+Commit all changed files with a message like:
+```
+fix-loop iteration N: <one-line summary>
+
+Blocking: X→Y  Important: X→Y
+```
+
+**Step 8 — Loop back to Step 1**
+
+### Stop Conditions
+
+1. **Success**: All test cases score `"pass"` (zero blocking AND zero important issues)
+2. **Max iterations**: 10 iterations reached — report what remains
+3. **Stuck**: Same blocking issue persists for 3 consecutive iterations with no score improvement — report and stop
+4. **Regression**: A previously-passing case starts failing — revert the last change, report the conflict, stop
+
+### Important Constraints
+
+- **Never fix a single case in isolation.** Always re-run the full suite after each change. A fix for case A might break case B.
+- **Cosmetic issues are not fix targets.** Only iterate on blocking and important issues.
+- **Read the vision report critically.** The vision model can hallucinate differences. If a reported issue seems wrong, look at the actual PNGs in `outputs/<type>/` to verify.
+- **Prefer the simplest fix.** Do not refactor the emitter mid-loop. Make targeted changes, validate, commit.
+
+### Files You Will Typically Modify
+
+Each diagram type has its own Parser, Model, and Emitter under `diagrams/<type>/`. The emitter is the most frequently changed file during the fix loop. Always update the diagram type's `CLAUDE.md` with what you learned.
+
+| Priority | File pattern | When |
+|---|---|---|
+| Most common | `diagrams/<type>/<Type>Emitter.js` | Style fixes, layout fixes, missing visual elements |
+| Common | `diagrams/<type>/<Type>Parser.js` | Missing or incorrectly parsed features |
+| Occasional | `diagrams/<type>/<Type>Model.js` | New model fields needed for a fix |
+| Occasional | `MxBuilder.js` | New XML generation patterns needed |
+| After fixes | `test.js` | Update tests for changed behavior |
+| After fixes | `diagrams/<type>/CLAUDE.md` | Document what you fixed/learned |
+
+### Harness Tools Reference
+
+| Command | Purpose |
+|---|---|
+| `node harness/compare.js --type <type> --verbose` | Run full comparison suite |
+| `node harness/compare.js --no-vision <file.puml>` | Generate PNGs only (no API call) |
+| `node harness/iteration-log.js --description "..."` | Log current iteration results |
+| `node harness/iteration-log.js --reset` | Start a fresh iteration log |
+
 ## Common Pitfalls
 
 - **UserObject wrapping**: Children go outside the UserObject as siblings, not nested inside. They reference the group ID via `parent=`.

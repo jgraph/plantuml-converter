@@ -373,6 +373,14 @@ async function main() {
 	const summaryPath = join(reportsDir, 'summary.json');
 	writeFileSync(summaryPath, JSON.stringify(summaryReport, null, 2));
 	console.log(`\nSummary written to: ${relative(PROJECT_ROOT, summaryPath)}`);
+
+	// Exit code signals result to callers (e.g. fix loop)
+	// 0 = all pass, 2 = blocking issues, 3 = important issues only
+	if (summary.fail > 0 || summary.error > 0) {
+		process.exit(2);
+	} else if (summary.needsWork > 0) {
+		process.exit(3);
+	}
 }
 
 main().catch((err) => {
