@@ -53,7 +53,7 @@ const LAYOUT = {
 	PARTICIPANT_WIDTH: 120,
 	PARTICIPANT_HEIGHT: 40,
 	PARTICIPANT_GAP: 40,       // Horizontal gap between participants
-	LIFELINE_TOP_MARGIN: 10,   // Gap between participant box and first element
+	LIFELINE_TOP_MARGIN: 50,   // Gap between participant box and first element
 	ROW_HEIGHT: 40,            // Vertical step per message/element
 	ACTIVATION_WIDTH: 16,      // Width of activation bar
 	NOTE_WIDTH: 120,
@@ -303,6 +303,10 @@ export class SequenceEmitter {
 
 		// Activation tracking
 		this.activeActivations = new Map(); // code → [{id, startY}]
+
+		// Track the Y position of the last emitted message arrow,
+		// so activation bars can start at the correct vertical position
+		this.lastMessageY = 0;
 	}
 
 	/**
@@ -586,6 +590,7 @@ export class SequenceEmitter {
 			this._emitNoteOnArrow(msg.noteOnArrow, fromPos, toPos, y);
 		}
 
+		this.lastMessageY = y;
 		this.currentY += LAYOUT.ROW_HEIGHT;
 	}
 
@@ -829,9 +834,13 @@ export class SequenceEmitter {
 			this.activeActivations.set(code, []);
 		}
 
+		// Start the activation bar at the Y of the last message arrow,
+		// not at currentY (which has already advanced past the message)
+		const startY = this.lastMessageY || this.currentY;
+
 		this.activeActivations.get(code).push({
 			id: this.nextId(),
-			startY: this.currentY,
+			startY: startY,
 			color: color
 		});
 	}
