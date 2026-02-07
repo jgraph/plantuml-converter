@@ -35,5 +35,5 @@ fi
 # Ensure output directory exists
 mkdir -p "$(dirname "$OUTPUT")"
 
-# Export to PNG
-"$DRAWIO_CMD" --export --format png --output "$OUTPUT" "$INPUT"
+# Export to PNG at 2x scale for better vision comparison readability
+"$DRAWIO_CMD" --export --format png --scale 2 --output "$OUTPUT" "$INPUT"

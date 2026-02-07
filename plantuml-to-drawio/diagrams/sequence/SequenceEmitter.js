@@ -1040,8 +1040,15 @@ export class SequenceEmitter {
 		}));
 
 		// Fragment label (top-left tag)
-		const labelText = fragment.type.toUpperCase() +
-			(fragment.label ? ` [${fragment.label}]` : '');
+		// For 'group', the label is just the custom text (no type prefix)
+		// For all others, show the type keyword followed by the condition
+		let labelText;
+		if (fragment.type === GroupingType.GROUP) {
+			labelText = fragment.label || 'group';
+		} else {
+			labelText = fragment.type +
+				(fragment.label ? ` [${fragment.label}]` : '');
+		}
 
 		this.cells.push(buildCell({
 			id: this.nextId(),
