@@ -12,6 +12,7 @@
  *
  * Currently supports:
  *   - Class diagrams
+ *   - Usecase diagrams
  *   - Sequence diagrams
  *
  * Designed to be extended with additional diagram types (class, activity,
@@ -22,6 +23,8 @@ import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
 import { emitSequenceDiagram } from './diagrams/sequence/SequenceEmitter.js';
 import { parseClassDiagram } from './diagrams/class/ClassParser.js';
 import { emitClassDiagram } from './diagrams/class/ClassEmitter.js';
+import { parseUsecaseDiagram } from './diagrams/usecase/UsecaseParser.js';
+import { emitUsecaseDiagram } from './diagrams/usecase/UsecaseEmitter.js';
 import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.js';
 
 // ── Diagram type registry ──────────────────────────────────────────────────
@@ -62,6 +65,39 @@ diagramHandlers.set('class', {
 	},
 	parse: parseClassDiagram,
 	emit: emitClassDiagram
+});
+
+// Register usecase diagram handler (before sequence — sequence's heuristic is broad
+// and would match usecase diagrams with arrows like -->)
+diagramHandlers.set('usecase', {
+	detect(text) {
+		// Explicit @startusecase
+		if (/@startusecase\b/i.test(text)) return true;
+
+		const lines = text.split('\n');
+		let usecaseKeywords = 0;
+		let actorShorthand = 0;
+		let usecaseShorthand = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			// usecase-specific keywords (but not "actor" alone — shared with sequence)
+			if (/^usecase\s+/i.test(trimmed)) usecaseKeywords++;
+			// Actor shorthand: :Name:
+			if (/^:[^:]+:/.test(trimmed)) actorShorthand++;
+			// Usecase shorthand: (Name) — but not just "()" or known non-usecase patterns
+			if (/^\([^)]+\)/.test(trimmed)) usecaseShorthand++;
+			// "actor" keyword with usecase-style elements nearby
+			if (/^actor\s+/i.test(trimmed)) usecaseKeywords++;
+		}
+
+		// Need at least one usecase keyword or both shorthand forms present
+		return usecaseKeywords >= 2 ||
+			(usecaseKeywords >= 1 && (actorShorthand >= 1 || usecaseShorthand >= 1)) ||
+			(actorShorthand >= 1 && usecaseShorthand >= 1);
+	},
+	parse: parseUsecaseDiagram,
+	emit: emitUsecaseDiagram
 });
 
 // Register sequence diagram handler

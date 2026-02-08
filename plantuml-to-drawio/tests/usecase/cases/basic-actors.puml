@@ -1,0 +1,27 @@
+@startuml
+' ── Actor keyword forms ───────────────────────────
+actor User
+actor "System Admin" as Admin
+actor Operator as Op
+
+' ── Actor shorthand ───────────────────────────────
+:Customer:
+:Guest User:
+
+' ── Business actor ────────────────────────────────
+actor/ "Business Analyst" as BA
+:Manager:/
+
+' ── With stereotypes ──────────────────────────────
+actor "Auditor" as Aud <<External>>
+
+' ── With colors ───────────────────────────────────
+actor "VIP" as VIP #LightBlue
+
+' ── Simple relationships to verify actors ─────────
+User --> (DoSomething)
+Admin --> (DoSomething)
+:Customer: --> (DoSomething)
+BA --> (DoSomething)
+
+@enduml

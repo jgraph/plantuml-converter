@@ -8,7 +8,7 @@
  * Supports multiple diagram types via type-specific extractors.
  *
  * CLI usage:
- *   node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class]
+ *   node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase]
  *
  * Programmatic usage:
  *   import { compareSvgToDrawio } from './svg-compare.js';
@@ -27,6 +27,11 @@ import { extractFromPlantUmlSvg as extractClassFromSvg } from './extract-plantum
 import { extractFromDrawioXml as extractClassFromDrawio } from './extract-drawio-xml-class.js';
 import { matchDiagrams as matchClass, diffDiagrams as diffClass, buildReport as buildClassReport } from './normalize-class.js';
 
+// ── Usecase diagram extractors ──────────────────────────────────────────
+import { extractFromPlantUmlSvg as extractUsecaseFromSvg } from './extract-plantuml-svg-usecase.js';
+import { extractFromDrawioXml as extractUsecaseFromDrawio } from './extract-drawio-xml-usecase.js';
+import { matchDiagrams as matchUsecase, diffDiagrams as diffUsecase, buildReport as buildUsecaseReport } from './normalize-usecase.js';
+
 // ── Extractor registry ────────────────────────────────────────────────────
 
 const extractors = {
@@ -43,6 +48,13 @@ const extractors = {
 		match: matchClass,
 		diff: diffClass,
 		buildReport: buildClassReport,
+	},
+	usecase: {
+		extractFromSvg: extractUsecaseFromSvg,
+		extractFromDrawio: extractUsecaseFromDrawio,
+		match: matchUsecase,
+		diff: diffUsecase,
+		buildReport: buildUsecaseReport,
 	},
 };
 
@@ -89,7 +101,7 @@ if (isMain) {
 	const args = process.argv.slice(2);
 
 	if (args.length < 2) {
-		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class]');
+		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase]');
 		console.error('');
 		console.error('Compares a PlantUML SVG against a draw.io XML structurally.');
 		console.error('Output: JSON report to stdout.');
@@ -140,6 +152,20 @@ if (isMain) {
 				console.error('');
 				console.error('── Candidate (draw.io XML) ──');
 				console.error(`  Classes (${cand.classes.length}): ${cand.classes.map(c => c.name).join(', ')}`);
+				console.error(`  Relationships: ${cand.relationships.length}`);
+				console.error(`  Notes: ${cand.notes.length}`);
+			} else if (diagramType === 'usecase') {
+				console.error('── Reference (PlantUML SVG) ──');
+				console.error(`  Actors (${ref.actors.length}): ${ref.actors.map(a => a.name).join(', ')}`);
+				console.error(`  Usecases (${ref.usecases.length}): ${ref.usecases.map(u => u.name).join(', ')}`);
+				console.error(`  Containers: ${ref.containers.length}`);
+				console.error(`  Relationships: ${ref.relationships.length}`);
+				console.error(`  Notes: ${ref.notes.length}`);
+				console.error('');
+				console.error('── Candidate (draw.io XML) ──');
+				console.error(`  Actors (${cand.actors.length}): ${cand.actors.map(a => a.name).join(', ')}`);
+				console.error(`  Usecases (${cand.usecases.length}): ${cand.usecases.map(u => u.name).join(', ')}`);
+				console.error(`  Containers: ${cand.containers.length}`);
 				console.error(`  Relationships: ${cand.relationships.length}`);
 				console.error(`  Notes: ${cand.notes.length}`);
 			}

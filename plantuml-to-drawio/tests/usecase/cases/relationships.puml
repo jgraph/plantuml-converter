@@ -1,0 +1,36 @@
+@startuml
+actor User
+actor Admin
+(Login)
+(Place Order)
+(Process Payment)
+(Cancel Order)
+(View Reports)
+(Manage Users)
+
+' ── Basic arrows ──────────────────────────────────
+User --> (Login)
+User --> (Place Order)
+
+' ── Dashed arrows (include/extend) ────────────────
+(Place Order) ..> (Process Payment) : <<include>>
+(Login) <.. (Cancel Order) : <<extend>>
+
+' ── Inheritance ───────────────────────────────────
+Admin --|> User
+
+' ── Direction hints ───────────────────────────────
+User -right-> (View Reports)
+User -down-> (Cancel Order)
+Admin -left-> (Manage Users)
+
+' ── Link labels ───────────────────────────────────
+User "1" --> "*" (Place Order) : places
+
+' ── Link colors ───────────────────────────────────
+User -[#blue]-> (Login)
+
+' ── Bold link ─────────────────────────────────────
+Admin ==> (Manage Users)
+
+@enduml

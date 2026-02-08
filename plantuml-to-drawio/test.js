@@ -18,6 +18,14 @@ import {
 	NotePosition as ClassNotePosition, SeparatorStyle,
 	ClassEntity, Member, Separator, Relationship, Package, Note as ClassNote, ClassDiagram
 } from './diagrams/class/ClassModel.js';
+import { parseUsecaseDiagram } from './diagrams/usecase/UsecaseParser.js';
+import { emitUsecaseDiagram } from './diagrams/usecase/UsecaseEmitter.js';
+import {
+	ElementType as UCElementType, RelationDecor as UCRelationDecor,
+	LineStyle as UCLineStyle, Direction as UCDirection,
+	NotePosition as UCNotePosition, DiagramDirection,
+	UsecaseElement, UsecaseRelationship, UsecaseContainer, UsecaseNote, UsecaseDiagram
+} from './diagrams/usecase/UsecaseModel.js';
 
 let passed = 0;
 let failed = 0;
@@ -941,6 +949,388 @@ Foo <|-- Bar`);
 	const seqType = detectDiagramType(`Alice -> Bob : hello`);
 	assert(seqType === 'sequence', 'Sequence still detected correctly');
 	console.log('  Sequence type still works: OK');
+}
+
+// ── Usecase Parser Tests ─────────────────────────────────────────────────
+
+section('Usecase Parser');
+
+// Actor keyword
+{
+	const d = parseUsecaseDiagram('actor User');
+	assert(d.elements.has('User'), 'Actor keyword creates element');
+	assert(d.elements.get('User').type === UCElementType.ACTOR, 'Type is ACTOR');
+	console.log('  Actor keyword: OK');
+}
+
+// Actor with alias
+{
+	const d = parseUsecaseDiagram('actor "System Admin" as Admin');
+	assert(d.elements.has('Admin'), 'Actor alias code');
+	assert(d.elements.get('Admin').displayName === 'System Admin', 'Actor display name');
+	console.log('  Actor alias: OK');
+}
+
+// Actor shorthand
+{
+	const d = parseUsecaseDiagram(':Customer:');
+	assert(d.elements.has('Customer'), 'Actor shorthand creates element');
+	assert(d.elements.get('Customer').type === UCElementType.ACTOR, 'Shorthand type is ACTOR');
+	console.log('  Actor shorthand: OK');
+}
+
+// Actor shorthand with spaces
+{
+	const d = parseUsecaseDiagram(':Guest User:');
+	assert(d.elements.has('GuestUser'), 'Actor shorthand strips spaces for code');
+	assert(d.elements.get('GuestUser').displayName === 'Guest User', 'Actor shorthand keeps display name');
+	console.log('  Actor shorthand with spaces: OK');
+}
+
+// Business actor
+{
+	const d = parseUsecaseDiagram('actor/ "BA" as BA');
+	assert(d.elements.has('BA'), 'Business actor parsed');
+	assert(d.elements.get('BA').type === UCElementType.ACTOR_BUSINESS, 'Type is ACTOR_BUSINESS');
+	console.log('  Business actor: OK');
+}
+
+// Business actor shorthand
+{
+	const d = parseUsecaseDiagram(':Manager:/');
+	assert(d.elements.has('Manager'), 'Business actor shorthand');
+	assert(d.elements.get('Manager').type === UCElementType.ACTOR_BUSINESS, 'Shorthand business type');
+	console.log('  Business actor shorthand: OK');
+}
+
+// Usecase keyword
+{
+	const d = parseUsecaseDiagram('usecase "Place Order" as PlaceOrder');
+	assert(d.elements.has('PlaceOrder'), 'Usecase keyword creates element');
+	assert(d.elements.get('PlaceOrder').displayName === 'Place Order', 'Usecase display name');
+	assert(d.elements.get('PlaceOrder').type === UCElementType.USECASE, 'Type is USECASE');
+	console.log('  Usecase keyword: OK');
+}
+
+// Usecase keyword simple
+{
+	const d = parseUsecaseDiagram('usecase Login');
+	assert(d.elements.has('Login'), 'Usecase simple keyword');
+	assert(d.elements.get('Login').type === UCElementType.USECASE, 'Simple usecase type');
+	console.log('  Usecase keyword simple: OK');
+}
+
+// Usecase shorthand
+{
+	const d = parseUsecaseDiagram('(Login System)');
+	assert(d.elements.has('LoginSystem'), 'Usecase shorthand creates element');
+	assert(d.elements.get('LoginSystem').displayName === 'Login System', 'Usecase shorthand display name');
+	assert(d.elements.get('LoginSystem').type === UCElementType.USECASE, 'Shorthand type is USECASE');
+	console.log('  Usecase shorthand: OK');
+}
+
+// Business usecase
+{
+	const d = parseUsecaseDiagram('usecase/ "Gen Report" as GenReport');
+	assert(d.elements.has('GenReport'), 'Business usecase parsed');
+	assert(d.elements.get('GenReport').type === UCElementType.USECASE_BUSINESS, 'Type is USECASE_BUSINESS');
+	console.log('  Business usecase: OK');
+}
+
+// Business usecase shorthand
+{
+	const d = parseUsecaseDiagram('(Audit Trail)/');
+	assert(d.elements.has('AuditTrail'), 'Business usecase shorthand');
+	assert(d.elements.get('AuditTrail').type === UCElementType.USECASE_BUSINESS, 'Shorthand business usecase type');
+	console.log('  Business usecase shorthand: OK');
+}
+
+// Stereotype
+{
+	const d = parseUsecaseDiagram('actor User <<External>>');
+	assert(d.elements.get('User').stereotypes[0] === 'External', 'Actor stereotype');
+	console.log('  Actor stereotype: OK');
+}
+
+// Color
+{
+	const d = parseUsecaseDiagram('actor VIP #LightBlue');
+	assert(d.elements.get('VIP').color === '#LightBlue', 'Actor color');
+	console.log('  Actor color: OK');
+}
+
+// Direction
+{
+	const d = parseUsecaseDiagram('left to right direction');
+	assert(d.direction === DiagramDirection.LEFT_TO_RIGHT, 'Left-to-right direction');
+	console.log('  Direction: OK');
+}
+
+// Title
+{
+	const d = parseUsecaseDiagram('title My Usecase Diagram');
+	assert(d.title === 'My Usecase Diagram', 'Diagram title');
+	console.log('  Title: OK');
+}
+
+// ── Usecase Parser — Containers ──────────────────────────────────────────
+
+section('Usecase Parser — Containers');
+
+{
+	const d = parseUsecaseDiagram(`package "Online Store" {
+	(Browse Products)
+	(Place Order)
+}`);
+	assert(d.containers.length === 1, 'One container');
+	assert(d.containers[0].name === 'Online Store', 'Container name');
+	assert(d.containers[0].type === UCElementType.PACKAGE, 'Container type is PACKAGE');
+	assert(d.containers[0].elements.length === 2, 'Two elements in container');
+	console.log('  Package container: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`rectangle "Payment" {
+	(Validate Card)
+}`);
+	assert(d.containers[0].type === UCElementType.RECTANGLE, 'Container type is RECTANGLE');
+	console.log('  Rectangle container: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`package "Main" {
+	package "Sub" {
+		(Inner UC)
+	}
+}`);
+	assert(d.containers[0].subContainers.length === 1, 'Nested container');
+	assert(d.containers[0].subContainers[0].name === 'Sub', 'Nested name');
+	assert(d.containers[0].subContainers[0].elements.length === 1, 'Nested element');
+	console.log('  Nested containers: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`package "Colored" #LightYellow {
+	(UC1)
+}`);
+	assert(d.containers[0].color === '#LightYellow', 'Container color');
+	console.log('  Container color: OK');
+}
+
+// ── Usecase Parser — Relationships ───────────────────────────────────────
+
+section('Usecase Parser — Relationships');
+
+{
+	const d = parseUsecaseDiagram(`actor User
+(Login)
+User --> (Login)`);
+	assert(d.links.length === 1, 'One relationship');
+	assert(d.links[0].from === 'User', 'From is User');
+	assert(d.links[0].to === 'Login', 'To is Login');
+	assert(d.links[0].rightDecor === UCRelationDecor.ARROW, 'Right decor is ARROW');
+	console.log('  Basic relationship: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`:Customer: --> (Place Order)`);
+	assert(d.links.length === 1, 'Shorthand link parsed');
+	assert(d.links[0].from === 'Customer', 'From shorthand resolved');
+	assert(d.links[0].to === 'PlaceOrder', 'To shorthand resolved');
+	// Elements should be auto-created
+	assert(d.elements.has('Customer'), 'Customer auto-created');
+	assert(d.elements.has('PlaceOrder'), 'PlaceOrder auto-created');
+	console.log('  Shorthand in links: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`(A) ..> (B) : <<include>>`);
+	assert(d.links[0].lineStyle === UCLineStyle.DASHED, 'Dashed line');
+	assert(d.links[0].rightDecor === UCRelationDecor.ARROW, 'Arrow decor');
+	assert(d.links[0].label === '<<include>>', 'Include label');
+	console.log('  Include relationship: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`actor A
+actor B
+A --|> B`);
+	assert(d.links[0].rightDecor === UCRelationDecor.EXTENDS, 'Extends decorator');
+	console.log('  Inheritance --|>: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`:User: -down-> (UC1)`);
+	assert(d.links[0].direction === UCDirection.DOWN, 'Direction hint DOWN');
+	console.log('  Direction hint: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`actor U
+(UC)
+U "1" --> "*" (UC) : places`);
+	assert(d.links[0].leftLabel === '1', 'Left label');
+	assert(d.links[0].rightLabel === '*', 'Right label');
+	assert(d.links[0].label === 'places', 'Center label');
+	console.log('  Link labels: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`(A) -[#red]-> (B)`);
+	assert(d.links[0].color === '#red', 'Link color');
+	console.log('  Link color: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`(A) ==> (B)`);
+	assert(d.links[0].lineStyle === UCLineStyle.BOLD, 'Bold line style');
+	console.log('  Bold link: OK');
+}
+
+// ── Usecase Parser — Notes ───────────────────────────────────────────────
+
+section('Usecase Parser — Notes');
+
+{
+	const d = parseUsecaseDiagram(`actor User
+note left of User : Primary user`);
+	assert(d.notes.length === 1, 'One note');
+	assert(d.notes[0].position === UCNotePosition.LEFT, 'Note position LEFT');
+	assert(d.notes[0].entityCode === 'User', 'Note attached to User');
+	assert(d.notes[0].text === 'Primary user', 'Note text');
+	console.log('  Single-line note: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`(Login)
+note right of (Login)
+	Line 1
+	Line 2
+end note`);
+	assert(d.notes[0].text.includes('Line 1'), 'Multi-line note line 1');
+	assert(d.notes[0].text.includes('Line 2'), 'Multi-line note line 2');
+	console.log('  Multi-line note: OK');
+}
+
+{
+	const d = parseUsecaseDiagram('note "Floating note" as N1');
+	assert(d.notes[0].alias === 'N1', 'Floating note alias');
+	assert(d.notes[0].text === 'Floating note', 'Floating note text');
+	console.log('  Floating note: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`(A) --> (B)
+note on link : Link note`);
+	assert(d.notes[0].isOnLink === true, 'Note on link');
+	assert(d.notes[0].text === 'Link note', 'Note on link text');
+	console.log('  Note on link: OK');
+}
+
+// ── Usecase Emitter Tests ────────────────────────────────────────────────
+
+section('Usecase Emitter');
+
+{
+	const d = new UsecaseDiagram();
+	const actor = new UsecaseElement('User', 'User', UCElementType.ACTOR);
+	d.addElement(actor);
+	const cells = emitUsecaseDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(cells.length > 0, 'Should emit actor cell');
+	assert(xml.includes('shape=umlActor'), 'Should use umlActor shape');
+	console.log('  Actor emission: OK');
+}
+
+{
+	const d = new UsecaseDiagram();
+	const uc = new UsecaseElement('Login', 'Login', UCElementType.USECASE);
+	d.addElement(uc);
+	const cells = emitUsecaseDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(cells.length > 0, 'Should emit usecase cell');
+	assert(xml.includes('ellipse=1'), 'Should use ellipse shape');
+	console.log('  Usecase emission: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`actor User
+(Login)
+User --> (Login)`);
+	const cells = emitUsecaseDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('edge="1"'), 'Edge present');
+	assert(xml.includes('endArrow=open'), 'Arrow for -->');
+	console.log('  Edge emission: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`package "System" {
+	(UC1)
+}`);
+	const cells = emitUsecaseDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('container=1'), 'Container style');
+	assert(xml.includes('shape=folder'), 'Package uses folder shape');
+	console.log('  Container emission: OK');
+}
+
+{
+	const d = parseUsecaseDiagram(`actor User
+note left of User : A note`);
+	const cells = emitUsecaseDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('shape=note'), 'Note shape');
+	console.log('  Note emission: OK');
+}
+
+// ── Usecase Pipeline Tests ───────────────────────────────────────────────
+
+section('Usecase Pipeline');
+
+{
+	const result = convert(`@startusecase
+actor Customer
+(Place Order)
+Customer --> (Place Order)
+@endusecase`);
+	assert(result.diagramType === 'usecase', 'Detected as usecase diagram');
+	assert(result.xml.includes('<mxfile>'), 'Has mxfile wrapper');
+	assert(result.xml.includes('Customer'), 'Contains Customer');
+	assert(result.xml.includes('Place Order'), 'Contains Place Order');
+	console.log('  Basic usecase conversion: OK');
+}
+
+{
+	const type = detectDiagramType(`@startusecase
+actor User
+(Login)
+User --> (Login)
+@endusecase`);
+	assert(type === 'usecase', 'Usecase type detected via @startusecase');
+	console.log('  Usecase type detection (@startusecase): OK');
+}
+
+{
+	const type = detectDiagramType(`actor Customer
+actor Admin
+(Login)
+(Place Order)
+Customer --> (Login)
+Admin --> (Place Order)`);
+	assert(type === 'usecase', 'Usecase type detected via heuristic');
+	console.log('  Usecase type detection (heuristic): OK');
+}
+
+{
+	// Verify existing types still work
+	const seqType = detectDiagramType('Alice -> Bob : hello');
+	assert(seqType === 'sequence', 'Sequence still detected after usecase added');
+	const classType = detectDiagramType(`class Foo
+class Bar
+Foo <|-- Bar`);
+	assert(classType === 'class', 'Class still detected after usecase added');
+	console.log('  Existing types still work: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

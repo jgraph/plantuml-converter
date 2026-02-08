@@ -1,0 +1,34 @@
+@startuml
+actor User
+(Login)
+(Place Order)
+(Checkout)
+
+User --> (Login)
+User --> (Place Order)
+(Place Order) --> (Checkout)
+
+' ── Single-line note ──────────────────────────────
+note left of User : Primary end user
+
+' ── Multi-line note ───────────────────────────────
+note right of (Place Order)
+	This is the core
+	business use case for
+	ordering products.
+end note
+
+' ── Floating note ─────────────────────────────────
+note "System requires\nhigh availability" as N1
+
+' ── Note with color ───────────────────────────────
+note right of (Login) #LightYellow
+	Must support SSO
+	and MFA
+end note
+
+' ── Note on link ──────────────────────────────────
+(Place Order) --> (Checkout) : proceeds to
+note on link : Must validate cart first
+
+@enduml

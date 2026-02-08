@@ -1,0 +1,83 @@
+@startuml
+title Usecase Diagram — Comprehensive Test
+
+' ── Layout direction ──────────────────────────────
+left to right direction
+
+' ── Basic actors ──────────────────────────────────
+actor Customer
+actor "System Administrator" as Admin
+:Guest User:
+actor/ "Business Analyst" as BA
+
+' ── Basic usecases ────────────────────────────────
+usecase "Place Order" as PlaceOrder
+usecase "Process Payment" as ProcessPayment
+(Login)
+(View Catalog)
+usecase/ "Generate Report" as GenReport
+
+' ── System boundary (package) ─────────────────────
+package "Online Store" {
+	(Browse Products)
+	(Add to Cart)
+	(Checkout)
+	(Track Order)
+}
+
+rectangle "Payment Gateway" {
+	(Validate Card)
+	(Charge Card)
+}
+
+' ── Relationships ─────────────────────────────────
+Customer --> PlaceOrder
+Customer --> (Login)
+Customer --> (View Catalog)
+Admin --> GenReport
+:Guest User: --> (Browse Products)
+BA ..> GenReport
+
+' ── Relationships inside containers ───────────────
+Customer --> (Browse Products)
+Customer --> (Add to Cart)
+Customer --> (Checkout)
+
+' ── Include / Extend style ────────────────────────
+PlaceOrder ..> ProcessPayment : <<include>>
+PlaceOrder ..> (Checkout) : <<include>>
+(Login) <.. (Browse Products) : <<extend>>
+
+' ── Inheritance ───────────────────────────────────
+Admin --|> Customer
+
+' ── Colors and stereotypes ────────────────────────
+actor "VIP Customer" as VIP #LightBlue
+usecase "Priority Support" as PriSupport <<Critical>> #LightGreen
+VIP --> PriSupport
+
+' ── Notes ─────────────────────────────────────────
+note left of Customer : Primary end user
+note right of PlaceOrder
+	Core business flow:
+	1. Select items
+	2. Confirm order
+	3. Pay
+end note
+note "System must support\n1000 concurrent users" as N1
+
+' ── Direction hints on arrows ─────────────────────
+Customer -down-> (Track Order)
+Admin -left-> (Validate Card)
+
+' ── Link labels ───────────────────────────────────
+Customer "1" --> "*" PlaceOrder : places
+
+' ── Link colors ───────────────────────────────────
+PlaceOrder -[#red]-> ProcessPayment
+
+' ── Note on link ──────────────────────────────────
+(Checkout) --> (Charge Card) : triggers
+note on link : Must be encrypted
+
+@enduml

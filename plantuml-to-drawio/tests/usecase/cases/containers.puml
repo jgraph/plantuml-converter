@@ -1,0 +1,55 @@
+@startuml
+actor Customer
+actor Admin
+
+' ── Package container ─────────────────────────────
+package "E-Commerce System" {
+	(Browse Products)
+	(Place Order)
+	(Track Order)
+}
+
+' ── Rectangle container ───────────────────────────
+rectangle "Payment Service" {
+	(Validate Card)
+	(Process Payment)
+}
+
+' ── Frame container ───────────────────────────────
+frame "Security Module" {
+	(Authenticate)
+	(Authorize)
+}
+
+' ── Cloud container ───────────────────────────────
+cloud "External Services" {
+	(Send Email)
+	(SMS Notification)
+}
+
+' ── Nested containers ─────────────────────────────
+package "Main System" {
+	package "Frontend" {
+		(Web UI)
+		(Mobile UI)
+	}
+	package "Backend" {
+		(API Gateway)
+		(Business Logic)
+	}
+}
+
+' ── Container with color ──────────────────────────
+package "Admin Panel" #LightYellow {
+	(Manage Users)
+	(View Logs)
+}
+
+' ── Relationships crossing boundaries ─────────────
+Customer --> (Browse Products)
+Customer --> (Place Order)
+Admin --> (Manage Users)
+(Place Order) --> (Validate Card)
+(Authenticate) --> (Authorize)
+
+@enduml

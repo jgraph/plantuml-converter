@@ -1,0 +1,28 @@
+@startuml
+' ── Usecase keyword forms ─────────────────────────
+usecase Login
+usecase "Place Order" as PlaceOrder
+usecase ProcessPayment as PP
+
+' ── Usecase shorthand ─────────────────────────────
+(Browse Catalog)
+(View Cart)
+
+' ── Business usecase ──────────────────────────────
+usecase/ "Generate Report" as GenReport
+(Audit Trail)/
+
+' ── With stereotypes ──────────────────────────────
+usecase "Priority Support" as PS <<Critical>>
+
+' ── With colors ───────────────────────────────────
+usecase "VIP Access" as VA #Gold
+
+' ── Simple relationships to verify usecases ───────
+actor User
+User --> Login
+User --> PlaceOrder
+User --> (Browse Catalog)
+User --> GenReport
+
+@enduml

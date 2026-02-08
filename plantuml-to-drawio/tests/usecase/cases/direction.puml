@@ -1,0 +1,19 @@
+@startuml
+' ── Left to right layout ──────────────────────────
+left to right direction
+
+actor Customer
+actor Admin
+
+package "System" {
+	(Login)
+	(Place Order)
+	(View Reports)
+}
+
+Customer --> (Login)
+Customer --> (Place Order)
+Admin --> (View Reports)
+Admin --|> Customer
+
+@enduml
