@@ -181,93 +181,131 @@ plantuml-to-drawio/
 │       └── regression/                — Cases that previously broke (never removed)
 ├── harness/
 │   ├── compare.js                     — Orchestrator: run converter, run plantuml, compare
-│   ├── export-drawio.sh               — draw.io CLI export wrapper
-│   └── vision-compare.js              — Anthropic API vision comparison call
+│   ├── svg-compare.js                 — Structural comparison entry point (generic)
+│   ├── normalize-sequence.js          — Sequence diagram normalized types + matching/diffing
+│   ├── extract-plantuml-svg-sequence.js — PlantUML SVG → NormalizedDiagram (sequence)
+│   ├── extract-drawio-xml-sequence.js — draw.io XML → NormalizedDiagram (sequence)
+│   ├── export-drawio.sh               — draw.io CLI export wrapper (PNG or SVG)
+│   ├── vision-compare.js              — Anthropic API vision comparison call
+│   └── iteration-log.js               — Iteration tracking for fix loops
 ├── outputs/                           — Generated PNGs, diff reports (gitignored)
 ├── test.js                            — Unit tests
 ├── generate-sample.js                 — Sample diagram generator
 └── generate-comprehensive-test.js     — Full-feature test diagram generator
 ```
 
-## Fix Loop Workflow
+## Adding a New Diagram Type — Full Process
 
-When asked to "run the fix loop" or "improve the converter", follow this iterative workflow within a single Claude Code session.
+Adding support for a new diagram type (e.g. class, activity, state) follows a proven multi-phase process. Each phase builds on the previous one.
 
 ### Prerequisites
 
 - PlantUML jar built: `./gradlew jar` (from repo root)
-- `ANTHROPIC_API_KEY` set in environment
 - draw.io installed at `/Applications/draw.io.app` (or set `DRAWIO_CMD`)
+- `ANTHROPIC_API_KEY` set in environment (only needed for Phase 5 vision comparison)
 
-### The Loop
+### Phase 1 — Analyse & Create Comprehensive Test
 
-Repeat until stop conditions are met:
+Study the PlantUML diagram type thoroughly before writing any converter code.
 
-**Step 1 — Run the harness**
+1. **Read the PlantUML Java source** for the diagram type's command classes (under `net/sourceforge/plantuml/<type>diagram/command/`). Extract regex patterns, identify every supported feature.
+2. **Tier the features**: core (must have for a useful diagram), advanced (common but not essential), deferred (rare or complex, handle later).
+3. **Create a comprehensive test `.puml`** at `tests/<type>/comprehensive.puml` that exercises every core and advanced feature. This is the visual comparison target — it should cover all the syntax variants, edge cases, and combinations that a real user would write.
+4. **Create smaller focused test cases** under `tests/<type>/cases/` — one per feature area. These are faster to iterate on than the comprehensive test.
+5. **Verify the test files render correctly** on PlantUML's server (http://www.plantuml.com/plantuml/uml/) before proceeding.
+
+### Phase 2 — Build Initial Importer
+
+Implement the three-stage pipeline for the new diagram type:
+
+1. **Model** (`diagrams/<type>/<Type>Model.js`) — data classes for the parsed structure
+2. **Parser** (`diagrams/<type>/<Type>Parser.js`) — line-by-line parser populating the model
+3. **Emitter** (`diagrams/<type>/<Type>Emitter.js`) — model → mxCell XML via MxBuilder
+4. **Register** in `PlantUmlImporter.js` — add detect/parse/emit to the handler map
+5. **Write a diagram-type CLAUDE.md** (`diagrams/<type>/CLAUDE.md`) documenting semantics, style mappings, known issues, and the comparison rubric
+
+Start with core features only. Get a basic version rendering before worrying about completeness.
+
+### Phase 3 — Add Functional Tests
+
+Add unit tests to `test.js` covering:
+
+- Parser: every syntax variant parsed correctly into the model
+- Emitter: expected mxCell output structure for key scenarios
+- Full pipeline: `.puml` text → `.drawio` XML round-trip
+
+Run with `node plantuml-to-drawio/test.js`. All tests must pass before proceeding.
+
+### Phase 4 — Build Visual Comparison Support
+
+The comparison harness (`harness/compare.js`) is generic and supports `--type <type>` already. But the **structural extractors** are diagram-type-specific and need new implementations.
+
+1. **Create `harness/normalize-<type>.js`** — normalized element classes for the new diagram type (e.g. `NClass`, `NAssociation`, `NAttribute` for class diagrams) plus matching/diffing logic. Can reuse the matching infrastructure pattern from `normalize-sequence.js`.
+2. **Create `harness/extract-plantuml-svg-<type>.js`** — extracts NormalizedDiagram from PlantUML's SVG output. PlantUML SVGs have semantic attributes (`class=`, `data-entity-uid=`, etc.) that vary by diagram type — study the actual SVG output to understand the patterns.
+3. **Create `harness/extract-drawio-xml-<type>.js`** — extracts NormalizedDiagram from the converter's `.drawio` XML output. Since we generate this XML, we know the exact style patterns.
+4. **Wire into `svg-compare.js`** — add a diagram-type router so the right extractor pair is selected.
+5. **Do NOT modify the existing sequence extractors.** Each diagram type gets its own files.
+
+The generic files that work unchanged for all diagram types:
+- `harness/compare.js` — orchestrator (already parameterized by `--type`)
+- `harness/svg-compare.js` — comparison entry point (needs router for extractor selection)
+- `harness/export-drawio.sh` — draw.io CLI wrapper
+- `harness/vision-compare.js` — Anthropic Vision API call
+
+### Phase 5 — Automated Iteration Loop (PNG Vision)
+
+Use the **PNG vision comparison** to rapidly iterate on the converter. This phase catches big-picture issues: missing elements, wrong shapes, broken layout, incorrect connections.
+
 ```bash
-node plantuml-to-drawio/harness/compare.js --type <type> --verbose
+node plantuml-to-drawio/harness/compare.js --type <type> --vision --no-structural --verbose
 ```
-Exit codes: `0` = all pass, `2` = blocking issues, `3` = important-only issues.
 
-**Step 2 — Read results**
-Read `plantuml-to-drawio/outputs/reports/summary.json`. Check:
-- All cases `"pass"`? → Done.
-- Completed 10 iterations? → Stop and report remaining issues.
+Repeat until diminishing returns:
 
-**Step 3 — Analyze failures**
-For each case with score `"fail"` or `"needs_work"`:
-1. Read the per-case report: `plantuml-to-drawio/outputs/<type>/<name>-report.json`
-2. Fix blocking issues first, then important
-3. Identify which converter file needs to change:
-   - Missing/wrong elements → likely the Parser (not parsing) or Emitter (not emitting)
-   - Wrong shapes/styles → Emitter (style mapping)
-   - Missing features → check the diagram type's `CLAUDE.md` for "Not Yet Emitted" items
+1. **Run the harness** — generates PNGs and vision comparison report
+2. **Read the report** — `outputs/reports/summary.json` and per-case reports
+3. **Fix blocking issues first**, then important. Target the root cause, not symptoms.
+4. **Run unit tests** — `node plantuml-to-drawio/test.js` — all must pass
+5. **Commit** — `fix-loop iteration N: <summary>`
+6. **Loop back to step 1**
 
-**Step 4 — Fix the converter**
-Make targeted changes. Rules:
-- Fix the **root cause**, not the symptom for one test case
-- If a fix changes layout constants or style mappings, it affects ALL test cases
-- Read the diagram type's `CLAUDE.md` before changing anything — known issues and historical bugs are documented there
-- Update that `CLAUDE.md` if you fix a known issue or discover a new gotcha
+**Stop conditions:**
+- 10 iterations reached
+- Same issue persists for 3 consecutive iterations with no improvement
+- Vision model keeps reporting the same cosmetic differences that aren't real problems
 
-**Step 5 — Run unit tests**
+**Important constraints:**
+- Never fix a single case in isolation — always re-run the full suite
+- Cosmetic issues are not fix targets during this phase
+- Read the vision report critically — the model can hallucinate differences
+- Prefer the simplest fix — do not refactor mid-loop
+
+### Phase 6 — Manual Refinement (SVG Structural + Visual Review)
+
+Once the PNG vision loop plateaus, switch to precise structural comparison combined with human visual review.
+
 ```bash
-node plantuml-to-drawio/test.js
-```
-All tests must pass. If a test fails because behavior intentionally changed, update the test.
-
-**Step 6 — Log the iteration**
-```bash
-node plantuml-to-drawio/harness/iteration-log.js --description "Brief description of what you changed"
+# Structural comparison + PNG export for visual review
+node plantuml-to-drawio/harness/compare.js --type <type> --png --verbose
 ```
 
-**Step 7 — Git commit**
-Commit all changed files with a message like:
-```
-fix-loop iteration N: <one-line summary>
+This mode:
+- Runs the **SVG structural comparison** (free, deterministic, precise)
+- Exports **PNGs** for the user to visually inspect side-by-side
 
-Blocking: X→Y  Important: X→Y
-```
+The structural comparison catches element-level issues (missing participants, wrong connections, missing fragments) but can be too literal about text matching (HTML entities, aliases, stereotypes). The user's visual review catches layout and styling issues that structural comparison doesn't measure.
 
-**Step 8 — Loop back to Step 1**
+Workflow:
+1. Run the harness with `--png`
+2. Review the structural report for real issues (ignore false positives from text encoding differences)
+3. Open the reference and candidate PNGs — compare visually
+4. The user identifies specific issues to fix
+5. Make targeted fixes, run tests, commit
+6. Repeat
 
-### Stop Conditions
-
-1. **Success**: All test cases score `"pass"` (zero blocking AND zero important issues)
-2. **Max iterations**: 10 iterations reached — report what remains
-3. **Stuck**: Same blocking issue persists for 3 consecutive iterations with no score improvement — report and stop
-4. **Regression**: A previously-passing case starts failing — revert the last change, report the conflict, stop
-
-### Important Constraints
-
-- **Never fix a single case in isolation.** Always re-run the full suite after each change. A fix for case A might break case B.
-- **Cosmetic issues are not fix targets.** Only iterate on blocking and important issues.
-- **Read the vision report critically.** The vision model can hallucinate differences. If a reported issue seems wrong, look at the actual PNGs in `outputs/<type>/` to verify.
-- **Prefer the simplest fix.** Do not refactor the emitter mid-loop. Make targeted changes, validate, commit.
+This phase continues until the user is satisfied with the visual quality.
 
 ### Files You Will Typically Modify
-
-Each diagram type has its own Parser, Model, and Emitter under `diagrams/<type>/`. The emitter is the most frequently changed file during the fix loop. Always update the diagram type's `CLAUDE.md` with what you learned.
 
 | Priority | File pattern | When |
 |---|---|---|
@@ -282,8 +320,11 @@ Each diagram type has its own Parser, Model, and Emitter under `diagrams/<type>/
 
 | Command | Purpose |
 |---|---|
-| `node harness/compare.js --type <type> --verbose` | Run full comparison suite |
-| `node harness/compare.js --no-vision <file.puml>` | Generate PNGs only (no API call) |
+| `node harness/compare.js --type <type> --verbose` | Structural comparison only (default, free) |
+| `node harness/compare.js --type <type> --png --verbose` | Structural + PNG export for visual review |
+| `node harness/compare.js --type <type> --vision --verbose` | Structural + PNG + Vision API comparison |
+| `node harness/compare.js --type <type> --vision --no-structural` | Vision API only (for automated loop) |
+| `node harness/compare.js --type <type> --png` | PNG export only (no comparison) |
 | `node harness/iteration-log.js --description "..."` | Log current iteration results |
 | `node harness/iteration-log.js --reset` | Start a fresh iteration log |
 
