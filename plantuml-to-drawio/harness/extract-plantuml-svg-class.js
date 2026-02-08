@@ -171,7 +171,17 @@ function extractClassFromEntitySvg(name, svg) {
 		} else if (color === '#E3664A') {
 			cls.type = 'annotation';
 		}
-		// #ADD1B2 = class (default)
+		// #ADD1B2 = class/object (default)
+	}
+
+	// Check for object type by looking for underlined text in the header
+	// PlantUML renders object names with text-decoration="underline"
+	if (headerEnd > 0) {
+		const headerSvg = svg.substring(0, headerEnd);
+		if (headerSvg.includes('text-decoration="underline"') ||
+			headerSvg.includes('text-decoration:underline')) {
+			cls.type = 'object';
+		}
 	}
 
 	// Extract members using two strategies:

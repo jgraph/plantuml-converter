@@ -234,4 +234,46 @@ together {
 ' ── Hide/show ────────────────────────────────────────────────
 hide Formatter methods
 
+' ── Object declarations ─────────────────────────────────────
+object alice {
+  name = "Alice"
+  age = 30
+}
+
+object "Bob Smith" as bob {
+  name = "Bob"
+  role = "Developer"
+}
+
+object singletonSvc <<singleton>> #LightYellow
+
+alice --> bob : knows
+
+' ── Map declarations ────────────────────────────────────────
+map "Server Config" as serverMap {
+  host => localhost
+  port => 8080
+  debug => true
+}
+
+map "Links Map" as linksMap {
+  user *--> alice
+  settings => default
+}
+
+serverMap --> linksMap : references
+
+' ── JSON declarations ───────────────────────────────────────
+json "User Profile" as userJson {
+  "name": "Alice",
+  "age": 30,
+  "address": {
+    "city": "NYC",
+    "zip": "10001"
+  },
+  "tags": ["admin", "user"]
+}
+
+userJson --> alice : describes
+
 @enduml

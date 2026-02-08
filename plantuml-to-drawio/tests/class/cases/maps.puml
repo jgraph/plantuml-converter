@@ -1,0 +1,37 @@
+@startuml
+title Map Diagram Test
+
+' ── Basic map ──
+map "Configuration" as config {
+  host => localhost
+  port => 8080
+  debug => true
+}
+
+' ── Simple map ──
+map Ports {
+  http => 80
+  https => 443
+  ssh => 22
+}
+
+' ── Map with linked entries ──
+object User {
+  name = "Alice"
+}
+
+object Address {
+  city = "New York"
+  state = "NY"
+}
+
+map "User Details" as details {
+  user *--> User
+  address *--> Address
+  role => admin
+}
+
+' ── Links between maps and objects ──
+config --> Ports : references
+
+@enduml

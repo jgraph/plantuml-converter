@@ -120,17 +120,20 @@ function extractClassFromCell(cell, childrenMap) {
 		cls.type = 'annotation';
 	}
 
-	// Check fontStyle for abstract
+	// Check fontStyle for abstract/object
 	if (cell.style) {
 		const fontStyleMatch = cell.style.match(/fontStyle=(\d+)/);
 		if (fontStyleMatch) {
 			const fontStyle = parseInt(fontStyleMatch[1], 10);
-			if (fontStyle === 3 || fontStyle === 2) {
-				// 3 = bold+italic (abstract class), 2 = italic (interface)
-				if (cls.type === 'class' && fontStyle === 3) {
+			if (fontStyle === 3) {
+				// 3 = bold+italic (abstract class)
+				if (cls.type === 'class') {
 					cls.type = 'abstract_class';
 					cls.isAbstract = true;
 				}
+			} else if (fontStyle === 4) {
+				// 4 = underline (object instance)
+				cls.type = 'object';
 			}
 		}
 	}

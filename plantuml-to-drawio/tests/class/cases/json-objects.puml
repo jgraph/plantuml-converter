@@ -1,0 +1,38 @@
+@startuml
+title JSON Objects Test
+
+' ── Basic JSON object ──
+json "User Profile" as profile {
+  "name": "Alice Johnson",
+  "age": 30,
+  "active": true,
+  "score": null
+}
+
+' ── Nested JSON object ──
+json "Server Config" as server {
+  "host": "api.example.com",
+  "port": 443,
+  "database": {
+    "type": "PostgreSQL",
+    "host": "db.example.com",
+    "port": 5432
+  },
+  "features": ["auth", "logging", "cache"]
+}
+
+' ── JSON with arrays ──
+json "Team" as team {
+  "name": "Engineering",
+  "members": [
+    "Alice",
+    "Bob",
+    "Charlie"
+  ],
+  "active": true
+}
+
+' ── Links between JSON entities ──
+profile --> team : belongs to
+
+@enduml

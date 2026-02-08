@@ -39,6 +39,9 @@ Multi-line headers use `<br>` (not `\n`) for line breaks since `html=1` is set.
 | enum | swimlane | «enumeration» prefix |
 | annotation | swimlane | «annotation» prefix |
 | entity / struct / record | swimlane | type prefix in header |
+| object | swimlane | underline (fontStyle=4) |
+| map | swimlane | bold, key=>value rows |
+| json | swimlane | bold, flattened JSON rows |
 | circle | ellipse | -- |
 | diamond | rhombus (filled black) | -- |
 | lollipop | ellipse (no fill) | -- |
@@ -107,6 +110,49 @@ SEPARATOR_HEIGHT: 8, H_GAP: 60, V_GAP: 80, MARGIN: 40, COLS_PER_ROW: 4
 
 ### Emit order
 packages → entities → notes → inheritance edges (`extends`/`implements`) → explicit link edges
+
+## Object Diagram Entity Types
+
+Object diagrams are part of the class diagram handler. Three additional entity types
+are supported on top of standard class entities:
+
+### Object (`EntityType.OBJECT`)
+
+- Keyword: `object`
+- Same swimlane rendering as classes
+- Header uses `fontStyle=4` (underline) — UML convention for instance names
+- No type prefix (objects don't show `<<object>>` in PlantUML)
+- Body uses the same member parsing as classes (`name = value` fields)
+- Syntax: `object Name`, `object "Display" as Code`, `object Code { ... }`
+
+### Map (`EntityType.MAP`)
+
+- Keyword: `map`
+- Swimlane rendering with key-value entry rows
+- Body uses `key => value` syntax (parsed as `MapEntry` objects, not `Member`)
+- Supports linked entries: `key *--> TargetEntity` — auto-creates target entity
+  and generates a `Relationship` edge
+- Parser uses `State.MAP_BODY` (distinct from `State.ENTITY_BODY`)
+- Syntax: `map Name { key => value }`, `map "Display" as Code { ... }`
+
+### JSON (`EntityType.JSON`)
+
+- Keyword: `json`
+- Swimlane rendering with flattened JSON tree rows
+- Body is actual JSON — parsed using `JSON.parse()` into a `JsonNode` tree
+- `JsonNode` types: OBJECT (key-value entries), ARRAY (indexed items), PRIMITIVE
+- Emitter flattens the tree into indented member rows:
+  - Object entries: `key : value` (primitives) or `key` + indented children
+  - Array items: `[0] value` (primitives) or `[0]` + indented children
+- Parser uses `State.JSON_BODY` with brace depth tracking
+- Supports single-line form: `json name true`, `json name 42`, `json name "str"`
+- Syntax: `json Name { ... }`, `json "Display" as Code { ... }`
+
+### Detection
+
+The class handler's `detect()` in PlantUmlImporter.js recognizes `object`, `map`,
+and `json` keywords alongside class/interface/enum/etc. Object diagrams are detected
+as type `'class'` (matching PlantUML's own behavior — there is no `@startobject`).
 
 ## Known Limitations
 

@@ -14,6 +14,7 @@ import {
 	Direction,
 	NotePosition,
 	SeparatorStyle,
+	JsonNodeType,
 	Separator
 } from './ClassModel.js';
 
@@ -75,6 +76,11 @@ function classStyle(entity, headerHeight) {
 	// Interface → italic
 	if (entity.type === EntityType.INTERFACE) {
 		style.fontStyle = 2;
+	}
+
+	// Object → underline (UML instance convention)
+	if (entity.type === EntityType.OBJECT) {
+		style.fontStyle = 4;
 	}
 
 	// Apply custom color
@@ -332,12 +338,21 @@ class ClassEmitter {
 		const sizes = new Map();
 
 		for (const [code, entity] of diagram.entities) {
-			const visibleMembers = this._getVisibleMembers(entity, diagram);
 			const hh = this._headerHeight(entity);
 			let bodyHeight = 0;
-			for (const m of visibleMembers) {
-				bodyHeight += (m instanceof Separator) ? LAYOUT.SEPARATOR_HEIGHT : LAYOUT.MEMBER_ROW_HEIGHT;
+
+			if (entity.type === EntityType.MAP) {
+				bodyHeight = Math.max(entity.mapEntries.length, 1) * LAYOUT.MEMBER_ROW_HEIGHT;
+			} else if (entity.type === EntityType.JSON) {
+				const rowCount = this._countJsonRows(entity.jsonNode);
+				bodyHeight = Math.max(rowCount, 1) * LAYOUT.MEMBER_ROW_HEIGHT;
+			} else {
+				const visibleMembers = this._getVisibleMembers(entity, diagram);
+				for (const m of visibleMembers) {
+					bodyHeight += (m instanceof Separator) ? LAYOUT.SEPARATOR_HEIGHT : LAYOUT.MEMBER_ROW_HEIGHT;
+				}
 			}
+
 			const height = hh + bodyHeight;
 			sizes.set(code, {
 				width: LAYOUT.CLASS_WIDTH,
@@ -547,6 +562,16 @@ class ClassEmitter {
 			return;
 		}
 
+		if (entity.type === EntityType.MAP) {
+			this._emitMapEntity(entity, pos, id);
+			return;
+		}
+
+		if (entity.type === EntityType.JSON) {
+			this._emitJsonEntity(entity, pos, id);
+			return;
+		}
+
 		// Swimlane container
 		const visibleMembers = this._getVisibleMembers(entity, this.diagram);
 		let bodyHeight = 0;
@@ -640,6 +665,193 @@ class ClassEmitter {
 		}));
 	}
 
+	// ── Map entity emission ──────────────────────────────────────────────
+
+	_emitMapEntity(entity, pos, id) {
+		const headerHeight = this._headerHeight(entity);
+		const rowCount = Math.max(entity.mapEntries.length, 1);
+		const bodyHeight = rowCount * LAYOUT.MEMBER_ROW_HEIGHT;
+		const totalHeight = headerHeight + bodyHeight;
+
+		// Header label
+		let label = '';
+		for (const stereo of entity.stereotypes) {
+			label += '&lt;&lt;' + xmlEscape(stereo) + '&gt;&gt;<br>';
+		}
+		label += xmlEscape(entity.displayName);
+
+		// Swimlane container
+		this.cells.push(buildCell({
+			id: id,
+			value: label,
+			style: classStyle(entity, headerHeight),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(pos.x, pos.y, pos.width, totalHeight),
+		}));
+
+		// Emit map entries as child cells
+		let yOffset = headerHeight;
+		for (const entry of entity.mapEntries) {
+			let entryLabel;
+			if (entry.linkedTarget) {
+				entryLabel = xmlEscape(entry.key) + ' \u2192 ' + xmlEscape(entry.linkedTarget);
+			} else {
+				entryLabel = xmlEscape(entry.key) + ' =&gt; ' + xmlEscape(entry.value || '');
+			}
+			this.cells.push(buildCell({
+				id: this.nextId(),
+				value: entryLabel,
+				style: buildStyle({
+					text: 1,
+					strokeColor: 'none',
+					fillColor: 'none',
+					align: 'left',
+					verticalAlign: 'top',
+					spacingLeft: 4,
+					spacingRight: 4,
+					overflow: 'hidden',
+					rotatable: 0,
+					points: '[[0,0.5],[1,0.5]]',
+					portConstraint: 'eastwest',
+					whiteSpace: 'wrap',
+					html: 1,
+					fontStyle: 0,
+				}),
+				vertex: true,
+				parent: id,
+				geometry: geom(0, yOffset, pos.width, LAYOUT.MEMBER_ROW_HEIGHT),
+			}));
+			yOffset += LAYOUT.MEMBER_ROW_HEIGHT;
+		}
+	}
+
+	// ── JSON entity emission ─────────────────────────────────────────────
+
+	_emitJsonEntity(entity, pos, id) {
+		const rows = [];
+		this._flattenJsonNode(entity.jsonNode, rows, 0);
+
+		const headerHeight = this._headerHeight(entity);
+		const rowCount = Math.max(rows.length, 1);
+		const bodyHeight = rowCount * LAYOUT.MEMBER_ROW_HEIGHT;
+		const totalHeight = headerHeight + bodyHeight;
+
+		// Header label
+		let label = '';
+		for (const stereo of entity.stereotypes) {
+			label += '&lt;&lt;' + xmlEscape(stereo) + '&gt;&gt;<br>';
+		}
+		label += xmlEscape(entity.displayName);
+
+		// Swimlane container
+		this.cells.push(buildCell({
+			id: id,
+			value: label,
+			style: classStyle(entity, headerHeight),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(pos.x, pos.y, pos.width, totalHeight),
+		}));
+
+		// Emit JSON rows as child cells
+		let yOffset = headerHeight;
+		for (const row of rows) {
+			this.cells.push(buildCell({
+				id: this.nextId(),
+				value: xmlEscape(row),
+				style: buildStyle({
+					text: 1,
+					strokeColor: 'none',
+					fillColor: 'none',
+					align: 'left',
+					verticalAlign: 'top',
+					spacingLeft: 4,
+					spacingRight: 4,
+					overflow: 'hidden',
+					rotatable: 0,
+					points: '[[0,0.5],[1,0.5]]',
+					portConstraint: 'eastwest',
+					whiteSpace: 'wrap',
+					html: 1,
+					fontStyle: 0,
+				}),
+				vertex: true,
+				parent: id,
+				geometry: geom(0, yOffset, pos.width, LAYOUT.MEMBER_ROW_HEIGHT),
+			}));
+			yOffset += LAYOUT.MEMBER_ROW_HEIGHT;
+		}
+	}
+
+	/**
+	 * Flatten a JsonNode tree into displayable rows.
+	 */
+	_flattenJsonNode(node, rows, indent) {
+		if (!node) return;
+
+		const prefix = '\u00A0\u00A0'.repeat(indent);
+
+		if (node.type === JsonNodeType.PRIMITIVE) {
+			rows.push(prefix + (node.value || ''));
+		} else if (node.type === JsonNodeType.OBJECT) {
+			for (const entry of node.entries) {
+				const childNode = entry.value;
+				if (childNode.type === JsonNodeType.PRIMITIVE) {
+					rows.push(prefix + entry.key + ' : ' + (childNode.value || ''));
+				} else {
+					rows.push(prefix + entry.key);
+					this._flattenJsonNode(childNode, rows, indent + 1);
+				}
+			}
+		} else if (node.type === JsonNodeType.ARRAY) {
+			for (let i = 0; i < node.items.length; i++) {
+				const item = node.items[i];
+				if (item.type === JsonNodeType.PRIMITIVE) {
+					rows.push(prefix + '[' + i + '] ' + (item.value || ''));
+				} else {
+					rows.push(prefix + '[' + i + ']');
+					this._flattenJsonNode(item, rows, indent + 1);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Count total flattened rows for a JsonNode tree.
+	 */
+	_countJsonRows(node) {
+		if (!node) return 0;
+
+		if (node.type === JsonNodeType.PRIMITIVE) return 1;
+
+		if (node.type === JsonNodeType.OBJECT) {
+			let count = 0;
+			for (const entry of node.entries) {
+				if (entry.value.type === JsonNodeType.PRIMITIVE) {
+					count += 1;
+				} else {
+					count += 1 + this._countJsonRows(entry.value);
+				}
+			}
+			return count;
+		}
+
+		if (node.type === JsonNodeType.ARRAY) {
+			let count = 0;
+			for (const item of node.items) {
+				if (item.type === JsonNodeType.PRIMITIVE) {
+					count += 1;
+				} else {
+					count += 1 + this._countJsonRows(item);
+				}
+			}
+			return count;
+		}
+
+		return 0;
+	}
+
 	_getTypePrefix(entity) {
 		switch (entity.type) {
 			case EntityType.INTERFACE:      return 'interface';
@@ -653,6 +865,9 @@ class ClassEmitter {
 			case EntityType.STEREOTYPE_TYPE:return 'stereotype';
 			case EntityType.DATACLASS:      return 'dataclass';
 			case EntityType.RECORD:         return 'record';
+			case EntityType.OBJECT:         return null;
+			case EntityType.MAP:            return null;
+			case EntityType.JSON:           return null;
 			default: return null;
 		}
 	}

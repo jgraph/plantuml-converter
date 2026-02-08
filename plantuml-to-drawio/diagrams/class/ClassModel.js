@@ -24,7 +24,10 @@ const EntityType = Object.freeze({
 	CIRCLE:         'circle',
 	DIAMOND:        'diamond',
 	LOLLIPOP_FULL:  'lollipop_full',
-	LOLLIPOP_HALF:  'lollipop_half'
+	LOLLIPOP_HALF:  'lollipop_half',
+	OBJECT:         'object',
+	MAP:            'map',
+	JSON:           'json'
 });
 
 const Visibility = Object.freeze({
@@ -107,6 +110,8 @@ class ClassEntity {
 		this.isAbstract = false;           // Explicit abstract modifier
 		this.url = null;
 		this.packagePath = null;           // Package this entity belongs to
+		this.mapEntries = [];              // Array of MapEntry (for MAP entities)
+		this.jsonNode = null;              // JsonNode tree (for JSON entities)
 	}
 }
 
@@ -169,6 +174,29 @@ class Note {
 	}
 }
 
+class MapEntry {
+	constructor(key, value) {
+		this.key = key;                    // Key string
+		this.value = value;                // Value string (or null for linked entries)
+		this.linkedTarget = null;          // Entity code if this is a *--> link entry
+	}
+}
+
+const JsonNodeType = Object.freeze({
+	OBJECT:    'object',
+	ARRAY:     'array',
+	PRIMITIVE: 'primitive'
+});
+
+class JsonNode {
+	constructor(type, value) {
+		this.type = type;                  // JsonNodeType enum
+		this.value = value || null;        // For primitives: the value string
+		this.entries = [];                 // For objects: Array of { key: string, value: JsonNode }
+		this.items = [];                   // For arrays: Array of JsonNode
+	}
+}
+
 class ClassDiagram {
 	constructor() {
 		this.title = null;
@@ -216,6 +244,7 @@ export {
 	Direction,
 	NotePosition,
 	SeparatorStyle,
+	JsonNodeType,
 
 	// Model classes
 	ClassEntity,
@@ -224,5 +253,7 @@ export {
 	Relationship,
 	Package,
 	Note,
+	MapEntry,
+	JsonNode,
 	ClassDiagram
 };

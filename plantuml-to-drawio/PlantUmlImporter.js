@@ -51,8 +51,8 @@ diagramHandlers.set('class', {
 
 		for (const line of lines) {
 			const trimmed = line.trim();
-			// Class/interface/enum/abstract declarations
-			if (/^(?:abstract\s+class|class|interface|enum|annotation|entity|struct|record)\s+/i.test(trimmed)) {
+			// Class/interface/enum/abstract/object/map/json declarations
+			if (/^(?:abstract\s+class|class|interface|enum|annotation|entity|struct|record|object|map|json)\s+/i.test(trimmed)) {
 				classKeywords++;
 			}
 			// Class-specific relationship patterns: <|--, *--, o--, ..|>, <|..

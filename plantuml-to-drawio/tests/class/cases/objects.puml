@@ -1,0 +1,36 @@
+@startuml
+title Object Diagram Test
+
+' ── Basic object declarations ──
+object Alice
+object "Bob Smith" as Bob
+
+' ── Object with body fields ──
+object User {
+  name = "Alice"
+  age = 30
+  email = "alice@example.com"
+}
+
+' ── Object with stereotype and color ──
+object Server <<singleton>> #LightBlue {
+  host = "localhost"
+  port = 8080
+}
+
+' ── Object with alias ──
+object "Production Database" as ProdDB #LightGreen {
+  type = "PostgreSQL"
+  version = "15.2"
+}
+
+' ── Links between objects ──
+Alice --> Bob : knows
+User --> ProdDB : uses
+Alice --o Server : connects to
+Bob --|> User : is a
+
+' ── Note on object ──
+note right of Server : Primary server\nfor production
+
+@enduml

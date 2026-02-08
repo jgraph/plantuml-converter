@@ -17,12 +17,15 @@ import {
 	Direction,
 	NotePosition,
 	SeparatorStyle,
+	JsonNodeType,
 	ClassEntity,
 	Member,
 	Separator,
 	Relationship,
 	Package,
 	Note,
+	MapEntry,
+	JsonNode,
 	ClassDiagram
 } from './ClassModel.js';
 
@@ -49,7 +52,10 @@ const ENTITY_KEYWORD_MAP = {
 	'record':         EntityType.RECORD,
 	'abstract':       EntityType.ABSTRACT_CLASS,
 	'circle':         EntityType.CIRCLE,
-	'diamond':        EntityType.DIAMOND
+	'diamond':        EntityType.DIAMOND,
+	'object':         EntityType.OBJECT,
+	'map':            EntityType.MAP,
+	'json':           EntityType.JSON
 };
 
 // Build a regex alternation from keywords (longest first to avoid prefix matches)
@@ -139,6 +145,8 @@ const State = Object.freeze({
 	ENTITY_BODY:    'entity_body',
 	MULTILINE_NOTE: 'multiline_note',
 	TOGETHER:       'together',
+	MAP_BODY:       'map_body',
+	JSON_BODY:      'json_body',
 });
 
 // ── Parser class ───────────────────────────────────────────────────────────
@@ -153,6 +161,8 @@ class ClassParser {
 		this.multiLineNoteLines = [];       // Lines of multi-line note
 		this.togetherGroup = null;          // Current together group
 		this.lineNumber = 0;
+		this.jsonBraceDepth = 0;            // Brace nesting depth for JSON body
+		this.jsonBodyLines = [];            // Collected JSON body lines
 	}
 
 	/**
@@ -169,6 +179,8 @@ class ClassParser {
 		this.multiLineNoteLines = [];
 		this.togetherGroup = null;
 		this.lineNumber = 0;
+		this.jsonBraceDepth = 0;
+		this.jsonBodyLines = [];
 
 		const lines = text.split('\n');
 
@@ -194,6 +206,17 @@ class ClassParser {
 			if (this.state === State.MULTILINE_NOTE) {
 				if (this._handleMultiLineNoteEnd(line)) continue;
 				this.multiLineNoteLines.push(rawLine.trimEnd());
+				continue;
+			}
+
+			if (this.state === State.MAP_BODY) {
+				if (this._parseMapBodyEnd(line)) continue;
+				this._parseMapBodyLine(line);
+				continue;
+			}
+
+			if (this.state === State.JSON_BODY) {
+				this._parseJsonBodyLine(line);
 				continue;
 			}
 
@@ -481,8 +504,20 @@ class ClassParser {
 		const hasBody = remaining.endsWith('{') || remaining === '{';
 		if (hasBody) {
 			this.currentEntity = entity;
-			this.state = State.ENTITY_BODY;
+			if (entityType === EntityType.MAP) {
+				this.state = State.MAP_BODY;
+			} else if (entityType === EntityType.JSON) {
+				this.state = State.JSON_BODY;
+				this.jsonBraceDepth = 1;
+				this.jsonBodyLines = [];
+			} else {
+				this.state = State.ENTITY_BODY;
+			}
 		} else {
+			// Handle single-line JSON values: json name true/42/null/"str"/[arr]
+			if (entityType === EntityType.JSON && remaining.length > 0) {
+				entity.jsonNode = this._parseJsonText(remaining);
+			}
 			this.diagram.addEntity(entity);
 			if (this.togetherGroup !== null) {
 				this.togetherGroup.push(code);
@@ -585,6 +620,117 @@ class ClassParser {
 		}
 
 		this.currentEntity.members.push(member);
+	}
+
+	// ── Map body parsing ─────────────────────────────────────────────────
+
+	_parseMapBodyEnd(line) {
+		if (line !== '}') return false;
+
+		this.diagram.addEntity(this.currentEntity);
+		if (this.togetherGroup !== null) {
+			this.togetherGroup.push(this.currentEntity.code);
+		}
+		this.currentEntity = null;
+		this.state = State.NORMAL;
+		return true;
+	}
+
+	_parseMapBodyLine(line) {
+		// Check for linked entry: key *--> Target or key *---> Target
+		const linkedMatch = line.match(/^(.+?)\s*(\*-+>)\s*(\w[\w.]*)$/);
+		if (linkedMatch) {
+			const entry = new MapEntry(linkedMatch[1].trim(), null);
+			entry.linkedTarget = linkedMatch[3];
+			this.currentEntity.mapEntries.push(entry);
+
+			// Auto-create target entity and add a link
+			this.diagram.getOrCreateEntity(entry.linkedTarget);
+			const link = new Relationship(this.currentEntity.code, entry.linkedTarget);
+			link.rightDecor = RelationDecor.ARROW;
+			link.lineStyle = LineStyle.SOLID;
+			this.diagram.addLink(link);
+			return;
+		}
+
+		// Check for key => value
+		const kvMatch = line.match(/^(.+?)\s*=>\s*(.*)$/);
+		if (kvMatch) {
+			const entry = new MapEntry(kvMatch[1].trim(), kvMatch[2].trim());
+			this.currentEntity.mapEntries.push(entry);
+			return;
+		}
+	}
+
+	// ── JSON body parsing ────────────────────────────────────────────────
+
+	_parseJsonBodyLine(line) {
+		// Track brace depth
+		for (const ch of line) {
+			if (ch === '{') this.jsonBraceDepth++;
+			if (ch === '}') this.jsonBraceDepth--;
+		}
+
+		if (this.jsonBraceDepth <= 0) {
+			// End of JSON body — parse collected lines
+			const jsonText = '{' + this.jsonBodyLines.join('\n') + '}';
+			this.currentEntity.jsonNode = this._parseJsonText(jsonText);
+			this.diagram.addEntity(this.currentEntity);
+			if (this.togetherGroup !== null) {
+				this.togetherGroup.push(this.currentEntity.code);
+			}
+			this.currentEntity = null;
+			this.state = State.NORMAL;
+			this.jsonBodyLines = [];
+			this.jsonBraceDepth = 0;
+		} else {
+			this.jsonBodyLines.push(line);
+		}
+	}
+
+	/**
+	 * Parse a JSON text string into a JsonNode tree.
+	 * Handles objects, arrays, strings, numbers, booleans, and null.
+	 */
+	_parseJsonText(text) {
+		const trimmed = text.trim();
+		try {
+			const parsed = JSON.parse(trimmed);
+			return this._jsonValueToNode(parsed);
+		} catch (e) {
+			// If parsing fails, store as a primitive with the raw text
+			return new JsonNode(JsonNodeType.PRIMITIVE, trimmed);
+		}
+	}
+
+	_jsonValueToNode(value) {
+		if (value === null) {
+			return new JsonNode(JsonNodeType.PRIMITIVE, 'null');
+		}
+		if (typeof value === 'boolean') {
+			return new JsonNode(JsonNodeType.PRIMITIVE, String(value));
+		}
+		if (typeof value === 'number') {
+			return new JsonNode(JsonNodeType.PRIMITIVE, String(value));
+		}
+		if (typeof value === 'string') {
+			return new JsonNode(JsonNodeType.PRIMITIVE, value);
+		}
+		if (Array.isArray(value)) {
+			const node = new JsonNode(JsonNodeType.ARRAY);
+			for (const item of value) {
+				node.items.push(this._jsonValueToNode(item));
+			}
+			return node;
+		}
+		if (typeof value === 'object') {
+			const node = new JsonNode(JsonNodeType.OBJECT);
+			for (const [k, v] of Object.entries(value)) {
+				node.entries.push({ key: k, value: this._jsonValueToNode(v) });
+			}
+			return node;
+		}
+		return new JsonNode(JsonNodeType.PRIMITIVE, String(value));
 	}
 
 	// ── Link parsing ─────────────────────────────────────────────────────

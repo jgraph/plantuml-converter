@@ -15,8 +15,9 @@ import { parseClassDiagram } from './diagrams/class/ClassParser.js';
 import { emitClassDiagram } from './diagrams/class/ClassEmitter.js';
 import {
 	EntityType, Visibility, MemberType, RelationDecor, LineStyle, Direction,
-	NotePosition as ClassNotePosition, SeparatorStyle,
-	ClassEntity, Member, Separator, Relationship, Package, Note as ClassNote, ClassDiagram
+	NotePosition as ClassNotePosition, SeparatorStyle, JsonNodeType,
+	ClassEntity, Member, Separator, Relationship, Package, Note as ClassNote,
+	MapEntry, JsonNode, ClassDiagram
 } from './diagrams/class/ClassModel.js';
 import { parseUsecaseDiagram } from './diagrams/usecase/UsecaseParser.js';
 import { emitUsecaseDiagram } from './diagrams/usecase/UsecaseEmitter.js';
@@ -1331,6 +1332,380 @@ class Bar
 Foo <|-- Bar`);
 	assert(classType === 'class', 'Class still detected after usecase added');
 	console.log('  Existing types still work: OK');
+}
+
+// ── Object Parser Tests ──────────────────────────────────────────────────
+
+section('Object Parser');
+
+{
+	// Simple object
+	const d = parseClassDiagram('object Foo');
+	assert(d.entities.has('Foo'), 'Simple object parsed');
+	assert(d.entities.get('Foo').type === EntityType.OBJECT, 'Type is OBJECT');
+	console.log('  Simple object: OK');
+}
+
+{
+	// Object with alias
+	const d = parseClassDiagram('object "My Object" as MO');
+	assert(d.entities.has('MO'), 'Object alias parsed');
+	assert(d.entities.get('MO').displayName === 'My Object', 'Object display name');
+	assert(d.entities.get('MO').type === EntityType.OBJECT, 'Aliased object type');
+	console.log('  Object with alias: OK');
+}
+
+{
+	// Object with body
+	const d = parseClassDiagram(`object User {
+	name = "Alice"
+	age = 30
+}`);
+	const entity = d.entities.get('User');
+	assert(entity !== undefined, 'Object with body exists');
+	assert(entity.type === EntityType.OBJECT, 'Object body type');
+	assert(entity.members.length === 2, 'Object body has 2 members');
+	console.log('  Object with body: OK');
+}
+
+{
+	// Object with stereotype and color
+	const d = parseClassDiagram('object Svc <<singleton>> #LightBlue');
+	const entity = d.entities.get('Svc');
+	assert(entity !== undefined, 'Stereotyped object exists');
+	assert(entity.stereotypes[0] === 'singleton', 'Object stereotype');
+	assert(entity.color === '#LightBlue', 'Object color');
+	console.log('  Object with stereotype and color: OK');
+}
+
+{
+	// Links between objects
+	const d = parseClassDiagram(`object A
+object B
+A --> B : knows`);
+	assert(d.entities.has('A'), 'Object A exists');
+	assert(d.entities.has('B'), 'Object B exists');
+	assert(d.links.length === 1, 'One link between objects');
+	assert(d.links[0].label === 'knows', 'Link label');
+	console.log('  Links between objects: OK');
+}
+
+{
+	// Note on object
+	const d = parseClassDiagram(`object Server
+note right of Server : Primary server`);
+	assert(d.notes.length === 1, 'Note on object exists');
+	assert(d.notes[0].entityCode === 'Server', 'Note attached to object');
+	console.log('  Note on object: OK');
+}
+
+{
+	// Object in package
+	const d = parseClassDiagram(`package myPkg {
+	object Inner {
+		x = 1
+	}
+}`);
+	assert(d.entities.has('Inner'), 'Object in package exists');
+	assert(d.entities.get('Inner').type === EntityType.OBJECT, 'Packaged object type');
+	assert(d.packages.length === 1, 'Package exists');
+	console.log('  Object in package: OK');
+}
+
+{
+	// Mixed objects and classes
+	const d = parseClassDiagram(`class MyClass {
+	+name : String
+}
+object myObj {
+	name = "test"
+}
+myObj --> MyClass`);
+	assert(d.entities.get('MyClass').type === EntityType.CLASS, 'Class type preserved');
+	assert(d.entities.get('myObj').type === EntityType.OBJECT, 'Object type preserved');
+	assert(d.links.length === 1, 'Link between object and class');
+	console.log('  Mixed objects and classes: OK');
+}
+
+// ── Map Parser Tests ────────────────────────────────────────────────────
+
+section('Map Parser');
+
+{
+	// Basic map with key-value entries
+	const d = parseClassDiagram(`map "Config" as config {
+	host => localhost
+	port => 8080
+}`);
+	assert(d.entities.has('config'), 'Map parsed');
+	assert(d.entities.get('config').type === EntityType.MAP, 'Type is MAP');
+	assert(d.entities.get('config').mapEntries.length === 2, 'Two map entries');
+	assert(d.entities.get('config').mapEntries[0].key === 'host', 'Map key');
+	assert(d.entities.get('config').mapEntries[0].value === 'localhost', 'Map value');
+	console.log('  Basic map: OK');
+}
+
+{
+	// Map without alias
+	const d = parseClassDiagram(`map Ports {
+	http => 80
+	https => 443
+}`);
+	assert(d.entities.has('Ports'), 'Map without alias parsed');
+	assert(d.entities.get('Ports').type === EntityType.MAP, 'Map type');
+	assert(d.entities.get('Ports').mapEntries.length === 2, 'Two entries');
+	console.log('  Map without alias: OK');
+}
+
+{
+	// Map with linked entry
+	const d = parseClassDiagram(`object User {
+	name = "Alice"
+}
+map "Details" as details {
+	user *--> User
+	role => admin
+}`);
+	const map = d.entities.get('details');
+	assert(map !== undefined, 'Map exists');
+	assert(map.mapEntries.length === 2, 'Two map entries');
+	assert(map.mapEntries[0].key === 'user', 'Linked entry key');
+	assert(map.mapEntries[0].linkedTarget === 'User', 'Linked target');
+	assert(map.mapEntries[0].value === null, 'Linked entry has no value');
+	assert(map.mapEntries[1].key === 'role', 'Normal entry key');
+	assert(map.mapEntries[1].value === 'admin', 'Normal entry value');
+	assert(d.links.length >= 1, 'Link created from map entry');
+	console.log('  Map with linked entry: OK');
+}
+
+{
+	// Map with long arrow linked entry
+	const d = parseClassDiagram(`object Target
+map myMap {
+	key *---> Target
+}`);
+	const map = d.entities.get('myMap');
+	assert(map.mapEntries[0].linkedTarget === 'Target', 'Long arrow linked target');
+	console.log('  Map with long arrow: OK');
+}
+
+{
+	// Links between maps
+	const d = parseClassDiagram(`map A {
+	x => 1
+}
+map B {
+	y => 2
+}
+A --> B`);
+	assert(d.links.length === 1, 'Link between maps');
+	console.log('  Links between maps: OK');
+}
+
+{
+	// Map with empty value
+	const d = parseClassDiagram(`map EmptyVal {
+	key =>
+}`);
+	assert(d.entities.get('EmptyVal').mapEntries[0].value === '', 'Empty value parsed');
+	console.log('  Map with empty value: OK');
+}
+
+// ── JSON Parser Tests ───────────────────────────────────────────────────
+
+section('JSON Parser');
+
+{
+	// Basic JSON object
+	const d = parseClassDiagram(`json "Profile" as profile {
+	"name": "Alice",
+	"age": 30
+}`);
+	assert(d.entities.has('profile'), 'JSON entity parsed');
+	assert(d.entities.get('profile').type === EntityType.JSON, 'Type is JSON');
+	const node = d.entities.get('profile').jsonNode;
+	assert(node !== null, 'JSON node exists');
+	assert(node.type === JsonNodeType.OBJECT, 'JSON node is object');
+	assert(node.entries.length === 2, 'Two JSON entries');
+	assert(node.entries[0].key === 'name', 'JSON key');
+	assert(node.entries[0].value.value === 'Alice', 'JSON value');
+	assert(node.entries[1].value.value === '30', 'JSON number');
+	console.log('  Basic JSON object: OK');
+}
+
+{
+	// Nested JSON object
+	const d = parseClassDiagram(`json nested {
+	"server": {
+		"host": "localhost",
+		"port": 8080
+	}
+}`);
+	const node = d.entities.get('nested').jsonNode;
+	assert(node.entries[0].key === 'server', 'Nested key');
+	assert(node.entries[0].value.type === JsonNodeType.OBJECT, 'Nested value is object');
+	assert(node.entries[0].value.entries.length === 2, 'Nested entries');
+	console.log('  Nested JSON object: OK');
+}
+
+{
+	// JSON with array
+	const d = parseClassDiagram(`json withArray {
+	"tags": ["admin", "user"],
+	"active": true
+}`);
+	const node = d.entities.get('withArray').jsonNode;
+	assert(node.entries[0].key === 'tags', 'Array key');
+	assert(node.entries[0].value.type === JsonNodeType.ARRAY, 'Array type');
+	assert(node.entries[0].value.items.length === 2, 'Two array items');
+	assert(node.entries[0].value.items[0].value === 'admin', 'Array item value');
+	assert(node.entries[1].key === 'active', 'Boolean key');
+	assert(node.entries[1].value.value === 'true', 'Boolean value');
+	console.log('  JSON with array: OK');
+}
+
+{
+	// JSON null value
+	const d = parseClassDiagram(`json nullTest {
+	"value": null
+}`);
+	const node = d.entities.get('nullTest').jsonNode;
+	assert(node.entries[0].value.value === 'null', 'Null value parsed');
+	console.log('  JSON null value: OK');
+}
+
+{
+	// JSON without alias
+	const d = parseClassDiagram(`json SimpleJson {
+	"key": "val"
+}`);
+	assert(d.entities.has('SimpleJson'), 'JSON without alias');
+	assert(d.entities.get('SimpleJson').type === EntityType.JSON, 'JSON type');
+	console.log('  JSON without alias: OK');
+}
+
+{
+	// Links between JSON entities
+	const d = parseClassDiagram(`json A {
+	"x": 1
+}
+json B {
+	"y": 2
+}
+A --> B`);
+	assert(d.links.length === 1, 'Link between JSON entities');
+	console.log('  Links between JSON entities: OK');
+}
+
+// ── Object/Map/JSON Emitter Tests ───────────────────────────────────────
+
+section('Object Emitter');
+
+{
+	// Object emits swimlane with underline
+	const d = parseClassDiagram(`object Foo {
+	name = "Alice"
+}`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('swimlane'), 'Object uses swimlane');
+	assert(xml.includes('fontStyle=4'), 'Object header is underlined');
+	console.log('  Object swimlane with underline: OK');
+}
+
+{
+	// Map emits swimlane with entries
+	const d = parseClassDiagram(`map Config {
+	host => localhost
+	port => 8080
+}`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('swimlane'), 'Map uses swimlane');
+	assert(xml.includes('host'), 'Map contains key');
+	assert(xml.includes('localhost'), 'Map contains value');
+	console.log('  Map emission: OK');
+}
+
+{
+	// JSON emits swimlane with flattened rows
+	const d = parseClassDiagram(`json Data {
+	"name": "Alice",
+	"age": 30
+}`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('swimlane'), 'JSON uses swimlane');
+	assert(xml.includes('name'), 'JSON contains key');
+	assert(xml.includes('Alice'), 'JSON contains value');
+	console.log('  JSON emission: OK');
+}
+
+// ── Object/Map/JSON Pipeline Tests ──────────────────────────────────────
+
+section('Object Pipeline');
+
+{
+	// Object diagram converts successfully
+	const result = convert(`@startuml
+object alice {
+	name = "Alice"
+	age = 30
+}
+object bob {
+	name = "Bob"
+}
+alice --> bob : knows
+@enduml`);
+	assert(result.diagramType === 'class', 'Object diagram detected as class type');
+	assert(result.xml.includes('alice'), 'Output contains alice');
+	assert(result.xml.includes('bob'), 'Output contains bob');
+	console.log('  Object pipeline: OK');
+}
+
+{
+	// Map diagram converts successfully
+	const result = convert(`@startuml
+map Config {
+	host => localhost
+}
+map Ports {
+	http => 80
+}
+Config --> Ports
+@enduml`);
+	assert(result.diagramType === 'class', 'Map diagram detected as class type');
+	assert(result.xml.includes('Config'), 'Output contains Config');
+	console.log('  Map pipeline: OK');
+}
+
+{
+	// Object type detection
+	const type = detectDiagramType(`object alice {
+	name = "Alice"
+}
+object bob {
+	name = "Bob"
+}
+alice --> bob : knows`);
+	assert(type === 'class', 'Object diagram detected as class type');
+	console.log('  Object type detection: OK');
+}
+
+{
+	// Existing types still work after adding object/map/json
+	const seqType = detectDiagramType('Alice -> Bob : hello');
+	assert(seqType === 'sequence', 'Sequence still detected');
+	const classType = detectDiagramType(`class Foo
+class Bar
+Foo <|-- Bar`);
+	assert(classType === 'class', 'Class still detected');
+	const ucType = detectDiagramType(`@startusecase
+actor User
+usecase (Login)
+User --> (Login)`);
+	assert(ucType === 'usecase', 'Usecase still detected');
+	console.log('  Existing types unaffected: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

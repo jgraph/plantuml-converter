@@ -172,10 +172,13 @@ export function diffDiagrams(matches) {
 			});
 		}
 
-		// Check type match
+		// Check type match — be lenient for object/map/json types
+		// since PlantUML SVG may report these as 'class' type
 		if (ref.type !== cand.type) {
+			const objectTypes = new Set(['class', 'object', 'map', 'json']);
+			const bothObjectLike = objectTypes.has(ref.type) && objectTypes.has(cand.type);
 			issues.push({
-				severity: 'important',
+				severity: bothObjectLike ? 'cosmetic' : 'important',
 				type: 'type_mismatch',
 				message: `${ref.name}: ref type=${ref.type}, cand type=${cand.type}`,
 			});
