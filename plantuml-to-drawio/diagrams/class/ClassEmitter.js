@@ -341,21 +341,40 @@ class ClassEmitter {
 			const hh = this._headerHeight(entity);
 			let bodyHeight = 0;
 
+			// Estimate width from content (approx 7px per char + padding)
+			let maxTextLen = entity.displayName.length;
+
 			if (entity.type === EntityType.MAP) {
 				bodyHeight = Math.max(entity.mapEntries.length, 1) * LAYOUT.MEMBER_ROW_HEIGHT;
+				for (const entry of entity.mapEntries) {
+					const entryText = entry.linkedTarget
+						? entry.key + ' → ' + entry.linkedTarget
+						: entry.key + ' => ' + (entry.value || '');
+					maxTextLen = Math.max(maxTextLen, entryText.length);
+				}
 			} else if (entity.type === EntityType.JSON) {
 				const rowCount = this._countJsonRows(entity.jsonNode);
 				bodyHeight = Math.max(rowCount, 1) * LAYOUT.MEMBER_ROW_HEIGHT;
+				// Estimate width from flattened rows
+				const rows = [];
+				this._flattenJsonNode(entity.jsonNode, rows, 0);
+				for (const row of rows) {
+					maxTextLen = Math.max(maxTextLen, row.length);
+				}
 			} else {
 				const visibleMembers = this._getVisibleMembers(entity, diagram);
 				for (const m of visibleMembers) {
 					bodyHeight += (m instanceof Separator) ? LAYOUT.SEPARATOR_HEIGHT : LAYOUT.MEMBER_ROW_HEIGHT;
+					if (!(m instanceof Separator)) {
+						maxTextLen = Math.max(maxTextLen, (m.rawText || '').length);
+					}
 				}
 			}
 
+			const estimatedWidth = Math.max(LAYOUT.CLASS_WIDTH, maxTextLen * 7 + 20);
 			const height = hh + bodyHeight;
 			sizes.set(code, {
-				width: LAYOUT.CLASS_WIDTH,
+				width: estimatedWidth,
 				height: Math.max(height, hh + LAYOUT.MEMBER_ROW_HEIGHT),
 			});
 		}
@@ -690,50 +709,54 @@ class ClassEmitter {
 			geometry: geom(pos.x, pos.y, pos.width, totalHeight),
 		}));
 
-		// Emit map entries as child cells
-		let yOffset = headerHeight;
+		// Build HTML table for two-column key|value layout
+		let tableHtml = '<table border="0" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;">';
 		for (const entry of entity.mapEntries) {
-			let entryLabel;
+			const key = xmlEscape(entry.key);
+			let val;
 			if (entry.linkedTarget) {
-				entryLabel = xmlEscape(entry.key) + ' \u2192 ' + xmlEscape(entry.linkedTarget);
+				val = xmlEscape(entry.linkedTarget);
 			} else {
-				entryLabel = xmlEscape(entry.key) + ' =&gt; ' + xmlEscape(entry.value || '');
+				val = xmlEscape(entry.value || '');
 			}
-			this.cells.push(buildCell({
-				id: this.nextId(),
-				value: entryLabel,
-				style: buildStyle({
-					text: 1,
-					strokeColor: 'none',
-					fillColor: 'none',
-					align: 'left',
-					verticalAlign: 'top',
-					spacingLeft: 4,
-					spacingRight: 4,
-					overflow: 'hidden',
-					rotatable: 0,
-					points: '[[0,0.5],[1,0.5]]',
-					portConstraint: 'eastwest',
-					whiteSpace: 'wrap',
-					html: 1,
-					fontStyle: 0,
-				}),
-				vertex: true,
-				parent: id,
-				geometry: geom(0, yOffset, pos.width, LAYOUT.MEMBER_ROW_HEIGHT),
-			}));
-			yOffset += LAYOUT.MEMBER_ROW_HEIGHT;
+			tableHtml += '<tr>'
+				+ '<td style="border-right:1px solid #808080;border-bottom:1px solid #808080;">' + key + '</td>'
+				+ '<td style="border-bottom:1px solid #808080;">' + val + '</td>'
+				+ '</tr>';
 		}
+		tableHtml += '</table>';
+
+		// Emit table as a single child cell
+		this.cells.push(buildCell({
+			id: this.nextId(),
+			value: tableHtml,
+			style: buildStyle({
+				text: 1,
+				strokeColor: 'none',
+				fillColor: 'none',
+				align: 'left',
+				verticalAlign: 'top',
+				spacingLeft: 0,
+				spacingRight: 0,
+				overflow: 'fill',
+				rotatable: 0,
+				points: '[[0,0.5],[1,0.5]]',
+				portConstraint: 'eastwest',
+				whiteSpace: 'wrap',
+				html: 1,
+				fontStyle: 0,
+			}),
+			vertex: true,
+			parent: id,
+			geometry: geom(0, headerHeight, pos.width, bodyHeight),
+		}));
 	}
 
 	// ── JSON entity emission ─────────────────────────────────────────────
 
 	_emitJsonEntity(entity, pos, id) {
-		const rows = [];
-		this._flattenJsonNode(entity.jsonNode, rows, 0);
-
 		const headerHeight = this._headerHeight(entity);
-		const rowCount = Math.max(rows.length, 1);
+		const rowCount = Math.max(this._countJsonRows(entity.jsonNode), 1);
 		const bodyHeight = rowCount * LAYOUT.MEMBER_ROW_HEIGHT;
 		const totalHeight = headerHeight + bodyHeight;
 
@@ -754,34 +777,33 @@ class ClassEmitter {
 			geometry: geom(pos.x, pos.y, pos.width, totalHeight),
 		}));
 
-		// Emit JSON rows as child cells
-		let yOffset = headerHeight;
-		for (const row of rows) {
-			this.cells.push(buildCell({
-				id: this.nextId(),
-				value: xmlEscape(row),
-				style: buildStyle({
-					text: 1,
-					strokeColor: 'none',
-					fillColor: 'none',
-					align: 'left',
-					verticalAlign: 'top',
-					spacingLeft: 4,
-					spacingRight: 4,
-					overflow: 'hidden',
-					rotatable: 0,
-					points: '[[0,0.5],[1,0.5]]',
-					portConstraint: 'eastwest',
-					whiteSpace: 'wrap',
-					html: 1,
-					fontStyle: 0,
-				}),
-				vertex: true,
-				parent: id,
-				geometry: geom(0, yOffset, pos.width, LAYOUT.MEMBER_ROW_HEIGHT),
-			}));
-			yOffset += LAYOUT.MEMBER_ROW_HEIGHT;
-		}
+		// Build HTML table for two-column JSON layout
+		const tableHtml = this._buildJsonTableHtml(entity.jsonNode);
+
+		// Emit table as a single child cell
+		this.cells.push(buildCell({
+			id: this.nextId(),
+			value: tableHtml,
+			style: buildStyle({
+				text: 1,
+				strokeColor: 'none',
+				fillColor: 'none',
+				align: 'left',
+				verticalAlign: 'top',
+				spacingLeft: 0,
+				spacingRight: 0,
+				overflow: 'fill',
+				rotatable: 0,
+				points: '[[0,0.5],[1,0.5]]',
+				portConstraint: 'eastwest',
+				whiteSpace: 'wrap',
+				html: 1,
+				fontStyle: 0,
+			}),
+			vertex: true,
+			parent: id,
+			geometry: geom(0, headerHeight, pos.width, bodyHeight),
+		}));
 	}
 
 	/**
@@ -818,7 +840,74 @@ class ClassEmitter {
 	}
 
 	/**
-	 * Count total flattened rows for a JsonNode tree.
+	 * Build an HTML table for a JSON node tree.
+	 * Objects render as two-column key|value tables.
+	 * Arrays render as single-column tables with indexed rows.
+	 * Nested objects/arrays render as nested sub-tables in the value column.
+	 */
+	_buildJsonTableHtml(node) {
+		if (!node) return '';
+		return '<table border="0" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;">'
+			+ this._buildJsonNodeRows(node)
+			+ '</table>';
+	}
+
+	_buildJsonNodeRows(node) {
+		if (!node) return '';
+
+		if (node.type === JsonNodeType.PRIMITIVE) {
+			return '<tr><td style="border-bottom:1px solid #808080;">' + xmlEscape(node.value || '') + '</td></tr>';
+		}
+
+		if (node.type === JsonNodeType.OBJECT) {
+			let html = '';
+			for (const entry of node.entries) {
+				const key = xmlEscape(entry.key);
+				const child = entry.value;
+				if (child.type === JsonNodeType.PRIMITIVE) {
+					html += '<tr>'
+						+ '<td style="border-right:1px solid #808080;border-bottom:1px solid #808080;">' + key + '</td>'
+						+ '<td style="border-bottom:1px solid #808080;">' + xmlEscape(child.value || '') + '</td>'
+						+ '</tr>';
+				} else {
+					// Nested object or array — render as sub-table in value column
+					const subTable = '<table border="0" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;">'
+						+ this._buildJsonNodeRows(child)
+						+ '</table>';
+					html += '<tr>'
+						+ '<td style="border-right:1px solid #808080;border-bottom:1px solid #808080;vertical-align:top;">' + key + '</td>'
+						+ '<td style="border-bottom:1px solid #808080;padding:0;">' + subTable + '</td>'
+						+ '</tr>';
+				}
+			}
+			return html;
+		}
+
+		if (node.type === JsonNodeType.ARRAY) {
+			let html = '';
+			for (let i = 0; i < node.items.length; i++) {
+				const item = node.items[i];
+				if (item.type === JsonNodeType.PRIMITIVE) {
+					html += '<tr><td style="border-bottom:1px solid #808080;">'
+						+ xmlEscape(item.value || '')
+						+ '</td></tr>';
+				} else {
+					const subTable = '<table border="0" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;">'
+						+ this._buildJsonNodeRows(item)
+						+ '</table>';
+					html += '<tr><td style="border-bottom:1px solid #808080;padding:0;">' + subTable + '</td></tr>';
+				}
+			}
+			return html;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Count total visible rows for a JsonNode tree as rendered in HTML table.
+	 * Nested entries use rowspan — the key occupies the same rows as children,
+	 * so nested entries contribute childRowCount rows (not 1 + childRowCount).
 	 */
 	_countJsonRows(node) {
 		if (!node) return 0;
@@ -831,7 +920,7 @@ class ClassEmitter {
 				if (entry.value.type === JsonNodeType.PRIMITIVE) {
 					count += 1;
 				} else {
-					count += 1 + this._countJsonRows(entry.value);
+					count += this._countJsonRows(entry.value);
 				}
 			}
 			return count;
@@ -843,7 +932,7 @@ class ClassEmitter {
 				if (item.type === JsonNodeType.PRIMITIVE) {
 					count += 1;
 				} else {
-					count += 1 + this._countJsonRows(item);
+					count += this._countJsonRows(item);
 				}
 			}
 			return count;
@@ -983,9 +1072,14 @@ class ClassEmitter {
 			}
 		}
 
+		// Convert newlines and \n literals to <br> for HTML rendering
+		const noteValue = xmlEscape(note.text)
+			.replace(/\\n/g, '<br>')
+			.replace(/\n/g, '<br>');
+
 		this.cells.push(buildCell({
 			id: noteId,
-			value: xmlEscape(note.text),
+			value: noteValue,
 			style: noteStyle(note),
 			vertex: true,
 			parent: this.parentId,

@@ -128,8 +128,9 @@ are supported on top of standard class entities:
 ### Map (`EntityType.MAP`)
 
 - Keyword: `map`
-- Swimlane rendering with key-value entry rows
+- Swimlane header (bold) + single child cell containing an **HTML table**
 - Body uses `key => value` syntax (parsed as `MapEntry` objects, not `Member`)
+- Rendered as two-column HTML table with vertical separator between key and value
 - Supports linked entries: `key *--> TargetEntity` — auto-creates target entity
   and generates a `Relationship` edge
 - Parser uses `State.MAP_BODY` (distinct from `State.ENTITY_BODY`)
@@ -138,15 +139,33 @@ are supported on top of standard class entities:
 ### JSON (`EntityType.JSON`)
 
 - Keyword: `json`
-- Swimlane rendering with flattened JSON tree rows
+- Swimlane header (bold) + single child cell containing an **HTML table**
 - Body is actual JSON — parsed using `JSON.parse()` into a `JsonNode` tree
 - `JsonNode` types: OBJECT (key-value entries), ARRAY (indexed items), PRIMITIVE
-- Emitter flattens the tree into indented member rows:
-  - Object entries: `key : value` (primitives) or `key` + indented children
-  - Array items: `[0] value` (primitives) or `[0]` + indented children
+- Rendered as two-column HTML table with nested sub-tables:
+  - Object entries: `key | value` (primitives), `key | <nested table>` (objects/arrays)
+  - Array items: single-column cells for each element
+  - Nested objects/arrays rendered recursively as sub-tables in value column
+- Height calculation uses `_countJsonRows()` which counts visible rows (nested entries
+  don't add extra rows — the key cell shares the same row space as the sub-table)
 - Parser uses `State.JSON_BODY` with brace depth tracking
 - Supports single-line form: `json name true`, `json name 42`, `json name "str"`
 - Syntax: `json Name { ... }`, `json "Display" as Code { ... }`
+
+### HTML Table Rendering (Maps & JSON)
+
+Maps and JSON entities use a different rendering approach than regular class swimlanes.
+Instead of `childLayout=stackLayout` with individual child cells per row, they use a
+**single child cell** containing an HTML `<table>` element. This enables two-column
+key|value layout with borders matching PlantUML's visual output.
+
+Key implementation details:
+- The swimlane container still provides the header (entity name)
+- A single child cell with `overflow=fill` contains the HTML table
+- `buildCell()` XML-escapes the HTML, and draw.io unescapes it for rendering
+- Inner text content is escaped with `xmlEscape()` before embedding in the HTML
+- Table styling uses inline CSS: `border-collapse:collapse`, `border-bottom/right`
+- The harness extractor parses HTML table `<td>` elements to count members
 
 ### Detection
 

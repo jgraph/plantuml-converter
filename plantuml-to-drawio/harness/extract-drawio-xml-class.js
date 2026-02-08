@@ -152,6 +152,15 @@ function extractClassFromCell(cell, childrenMap) {
 			const memberText = unescapeXml(child.value || '').trim();
 			if (memberText === '') continue;
 
+			// Check if child value contains an HTML table (map/json entities)
+			if (memberText.includes('<table') || memberText.includes('<TABLE')) {
+				const tableMembers = extractMembersFromHtmlTable(memberText);
+				for (const m of tableMembers) {
+					cls.members.push(m);
+				}
+				continue;
+			}
+
 			const member = new NMember(memberText);
 
 			// Parse visibility from text
@@ -223,6 +232,46 @@ function inferRelType(style) {
 	}
 
 	return 'association';
+}
+
+/**
+ * Extract member entries from an HTML table cell value.
+ * Used for map and JSON entities that render as HTML tables.
+ */
+function extractMembersFromHtmlTable(html) {
+	const members = [];
+	// Extract text from <td> elements, pair them as key-value rows
+	const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+	let rowMatch;
+
+	while ((rowMatch = rowRegex.exec(html)) !== null) {
+		const rowContent = rowMatch[1];
+		const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+		const cells = [];
+		let tdMatch;
+		while ((tdMatch = tdRegex.exec(rowContent)) !== null) {
+			// Strip inner HTML tags and nested tables
+			let text = tdMatch[1]
+				.replace(/<table[\s\S]*?<\/table>/gi, '')
+				.replace(/<[^>]*>/g, '')
+				.trim();
+			if (text) cells.push(text);
+		}
+
+		if (cells.length === 2) {
+			// Two-column row: key | value
+			const member = new NMember(cells[0] + ' => ' + cells[1]);
+			members.push(member);
+		} else if (cells.length === 1) {
+			// Single-column row (array item or single value)
+			const member = new NMember(cells[0]);
+			members.push(member);
+		}
+		// Rows with nested tables (cells.length === 0 after stripping) are
+		// handled by recursion — the inner table's rows will be matched too
+	}
+
+	return members;
 }
 
 function extractNameFromValue(value) {
