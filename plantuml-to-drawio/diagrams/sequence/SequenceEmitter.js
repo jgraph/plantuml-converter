@@ -425,9 +425,23 @@ export class SequenceEmitter {
 
 	_layoutParticipants() {
 		const participants = this.diagram.getOrderedParticipants();
+		const codes = participants.map(p => p.code);
+
+		// Build an index map: code → column index (for gap lookups)
+		const codeIndex = new Map();
+		codes.forEach((code, i) => codeIndex.set(code, i));
+		this._codeIndex = codeIndex;
+
+		// Compute participant widths for gap calculation
+		const widths = participants.map(p => this._participantWidth(p));
+
+		// Compute per-gap minimum spacing based on content between participants
+		const gaps = this._computeGaps(codes, codeIndex, widths);
+
 		let x = LAYOUT.MARGIN_LEFT;
 
-		for (const p of participants) {
+		for (let i = 0; i < participants.length; i++) {
+			const p = participants[i];
 			const width = this._participantWidth(p);
 			const centerX = x + width / 2;
 
@@ -440,10 +454,134 @@ export class SequenceEmitter {
 			// Pre-allocate group ID for this participant
 			this.participantGroupIds.set(p.code, this.nextId());
 
-			x += width + LAYOUT.PARTICIPANT_GAP;
+			if (i < participants.length - 1) {
+				const gap = gaps[i] || LAYOUT.PARTICIPANT_GAP;
+				x += width + gap;
+			}
 		}
 
-		this.diagramWidth = x - LAYOUT.PARTICIPANT_GAP + LAYOUT.MARGIN_LEFT;
+		const lastP = participants[participants.length - 1];
+		const lastWidth = this._participantWidth(lastP);
+		this.diagramWidth = x + lastWidth + LAYOUT.MARGIN_LEFT;
+	}
+
+	/**
+	 * Pre-scan all diagram elements to compute the minimum gap needed
+	 * between each adjacent pair of participants.
+	 *
+	 * Returns an array of gap values, one per adjacent pair (length = participants - 1).
+	 * gaps[i] = minimum gap between participant i and participant i+1.
+	 */
+	_computeGaps(codes, codeIndex, widths) {
+		const n = codes.length;
+		if (n <= 1) return [];
+
+		// Start with the default minimum gap for each pair
+		const gaps = new Array(n - 1).fill(LAYOUT.PARTICIPANT_GAP);
+
+		// Recursively scan all elements (including those nested in fragments)
+		this._scanElementsForGaps(this.diagram.elements, codes, codeIndex, gaps, widths);
+
+		return gaps;
+	}
+
+	/**
+	 * Recursively scan elements and update gap requirements.
+	 */
+	_scanElementsForGaps(elements, codes, codeIndex, gaps, widths) {
+		for (const el of elements) {
+			if (el instanceof Message) {
+				if (el.isSelf) {
+					// Self messages need extra space on the right for the loop
+					const idx = codeIndex.get(el.from);
+					if (idx !== undefined && idx < gaps.length) {
+						const labelWidth = this._estimateTextWidth(el.label);
+						const needed = LAYOUT.SELF_MESSAGE_WIDTH + labelWidth + 10;
+						gaps[idx] = Math.max(gaps[idx], needed);
+					}
+				} else if (el._isReturn !== true) {
+					this._requireGapForMessage(el.from, el.to, el.label, codeIndex, gaps, widths);
+				}
+			} else if (el instanceof ExoMessage) {
+				// Exo messages need label space in the adjacent gap
+				const idx = codeIndex.get(el.participant);
+				if (idx !== undefined) {
+					const labelWidth = this._estimateTextWidth(el.label);
+					const needed = labelWidth + 15;
+					if (el.exoType === ExoMessageType.FROM_LEFT || el.exoType === ExoMessageType.TO_LEFT) {
+						// Space needed to the left
+						if (idx > 0) {
+							gaps[idx - 1] = Math.max(gaps[idx - 1], needed);
+						}
+					} else {
+						// Space needed to the right
+						if (idx < gaps.length) {
+							gaps[idx] = Math.max(gaps[idx], needed);
+						}
+					}
+				}
+			} else if (el instanceof Note) {
+				if (el.participants.length === 1 && el.isAcross === false) {
+					const idx = codeIndex.get(el.participants[0]);
+					if (idx !== undefined) {
+						const noteWidth = Math.max(LAYOUT.NOTE_WIDTH, this._estimateTextWidth(el.text) + 20);
+						if (el.position === NotePosition.RIGHT && idx < gaps.length) {
+							gaps[idx] = Math.max(gaps[idx], noteWidth + LAYOUT.NOTE_MARGIN);
+						} else if (el.position === NotePosition.LEFT && idx > 0) {
+							gaps[idx - 1] = Math.max(gaps[idx - 1], noteWidth + LAYOUT.NOTE_MARGIN);
+						}
+						// OVER notes are centered on the participant — no gap change needed
+					}
+				}
+			} else if (el instanceof Fragment) {
+				// Scan elements inside all fragment sections
+				for (const section of el.sections) {
+					this._scanElementsForGaps(section.elements, codes, codeIndex, gaps, widths);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Require sufficient gap for a message between two participants.
+	 *
+	 * The label must fit in the center-to-center distance between
+	 * the two lifelines.  Center-to-center = gap + leftWidth/2 + rightWidth/2,
+	 * so the required edge-to-edge gap = labelWidth - leftWidth/2 - rightWidth/2.
+	 *
+	 * Only adjacent-pair messages (span = 1) directly size gaps.
+	 */
+	_requireGapForMessage(fromCode, toCode, label, codeIndex, gaps, widths) {
+		const fromIdx = codeIndex.get(fromCode);
+		const toIdx = codeIndex.get(toCode);
+		if (fromIdx === undefined || toIdx === undefined) return;
+
+		const lo = Math.min(fromIdx, toIdx);
+		const hi = Math.max(fromIdx, toIdx);
+		const span = hi - lo;
+
+		if (span !== 1) return; // only adjacent pairs constrain individual gaps
+
+		const labelWidth = this._estimateTextWidth(label);
+		// Center-to-center distance needed for the label
+		const centerToCenter = labelWidth + 15;
+		// Subtract the half-widths already contributed by each participant
+		const halfLeft = widths[lo] / 2;
+		const halfRight = widths[hi] / 2;
+		const needed = centerToCenter - halfLeft - halfRight;
+		gaps[lo] = Math.max(gaps[lo], needed);
+	}
+
+	/**
+	 * Estimate the rendered pixel width of a text string.
+	 * Approximation: 6px per character (average for 11px default font).
+	 */
+	_estimateTextWidth(text) {
+		if (!text) return 0;
+		// Use the longest line if multi-line
+		const lines = text.split(/\\n|<br\s*\/?>|\n/);
+		const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
+		return longest * 6;
 	}
 
 	// ── Title ────────────────────────────────────────────────────────────
@@ -584,8 +722,13 @@ export class SequenceEmitter {
 			}));
 		}
 
-		// Advance Y past the footer boxes
-		this.currentY += LAYOUT.PARTICIPANT_HEIGHT;
+		// Advance Y past the tallest footer box
+		let maxFooterHeight = LAYOUT.PARTICIPANT_HEIGHT;
+		for (const [, p] of this.diagram.participants) {
+			if (p.isCreated) continue;
+			maxFooterHeight = Math.max(maxFooterHeight, this._participantHeight(p));
+		}
+		this.currentY += maxFooterHeight;
 	}
 
 	/**

@@ -42,8 +42,8 @@ case "$EXT" in
 		;;
 	png)
 		FORMAT="png"
-		# Export PNGs at 2x scale for better readability
-		EXTRA_ARGS="--scale 2"
+		# Use 1x scale — 2x can hit Chromium rendering limits on tall diagrams
+		EXTRA_ARGS="--border 10 --crop"
 		;;
 	*)
 		echo "Error: Unsupported output format: .$EXT (use .png or .svg)" >&2
@@ -54,5 +54,5 @@ esac
 # Ensure output directory exists
 mkdir -p "$(dirname "$OUTPUT")"
 
-# Export
-"$DRAWIO_CMD" --export --format "$FORMAT" $EXTRA_ARGS --output "$OUTPUT" "$INPUT"
+# Export (--disable-gpu forces software rendering, more reliable for tall diagrams)
+"$DRAWIO_CMD" --export --format "$FORMAT" $EXTRA_ARGS --output "$OUTPUT" "$INPUT" --disable-gpu
