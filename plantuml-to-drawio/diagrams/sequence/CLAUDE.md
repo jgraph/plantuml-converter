@@ -6,11 +6,11 @@ This document is the single source of continuity for the PlantUML sequence diagr
 
 | File | Role | Lines |
 |---|---|---|
-| `SequenceModel.js` | Enums + data classes | ~345 |
-| `ArrowParser.js` | Arrow syntax → ArrowConfig | ~413 |
-| `SequenceParser.js` | PlantUML text → SequenceDiagram model | ~888 |
-| `SequenceEmitter.js` | Model → mxCell XML strings | ~1099 |
-| `test.js` | 97 unit tests | ~540 |
+| `SequenceModel.js` | Enums + data classes | ~350 |
+| `ArrowParser.js` | Arrow syntax → ArrowConfig | ~412 |
+| `SequenceParser.js` | PlantUML text → SequenceDiagram model | ~891 |
+| `SequenceEmitter.js` | Model → mxCell XML strings | ~1605 |
+| `test.js` | Unit tests (360 assertions) | ~1720 |
 | `generate-sample.js` | E-commerce sample + simple 2-message sample | ~110 |
 | `generate-comprehensive-test.js` | All-feature visual test diagram | ~212 |
 
@@ -54,7 +54,7 @@ participant Alice <<stereotype>>          — stereotype annotation
 
 **Auto-creation**: Participants not explicitly declared are auto-created as `participant` type when first mentioned in a message. The `getOrCreateParticipant(code)` method handles this.
 
-**Ordering**: `getOrderedParticipants()` sorts by explicit `order` first, then falls back to declaration order. Participants without an order value come after all ordered ones.
+**Ordering**: `getOrderedParticipants()` interleaves explicit `order` values with declaration order. Each participant gets a sort key: explicitly ordered participants use their `order` value; unordered participants use their declaration index. Both groups are sorted together so `order 99` correctly places a participant at the end rather than before all unordered ones.
 
 ### 1.2 Arrow Syntax
 
@@ -314,7 +314,7 @@ These create `ExoMessage` objects with an `exoType`: `FROM_LEFT`, `TO_LEFT`, `FR
 title My Diagram Title
 ```
 
-Stored as `diagram.title`. **Not emitted** — the emitter doesn't currently render the title. It could be added as a text cell above the diagram.
+Stored as `diagram.title`. **Emitted** as a bold 14px centered text cell above the participant headers. When present, `TITLE_HEIGHT` (30px) is reserved between `MARGIN_TOP` and the participant headers. The `headerStartY` field tracks where headers actually begin.
 
 ---
 
@@ -380,15 +380,15 @@ Stored as `diagram.title`. **Not emitted** — the emitter doesn't currently ren
 | PlantUML type | draw.io `shape` value | Current style string |
 |---|---|---|
 | `participant` | *(none — default rectangle)* | `rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;` |
-| `actor` | `mxgraph.basic.person` | `shape=mxgraph.basic.person;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;` |
-| `boundary` | `mxgraph.sysml.port` | `shape=mxgraph.sysml.port;...` |
-| `control` | `mxgraph.flowchart.on-page_reference` | `shape=mxgraph.flowchart.on-page_reference;...` |
-| `entity` | `mxgraph.er.entity` | `shape=mxgraph.er.entity;...` |
-| `database` | `mxgraph.flowchart.database` | `shape=mxgraph.flowchart.database;...` |
-| `queue` | `mxgraph.flowchart.delay` | `shape=mxgraph.flowchart.delay;...` |
-| `collections` | `mxgraph.basic.layered_rect` | `shape=mxgraph.basic.layered_rect;...` |
+| `actor` | `umlActor` | `shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;...` |
+| `boundary` | `umlBoundary` | `shape=umlBoundary;verticalLabelPosition=bottom;verticalAlign=top;...` |
+| `control` | `umlControl` | `shape=umlControl;verticalLabelPosition=bottom;verticalAlign=top;...` |
+| `entity` | `umlEntity` | `shape=umlEntity;verticalLabelPosition=bottom;verticalAlign=top;...` |
+| `database` | `cylinder3` | `shape=cylinder3;size=8;...` (40w×60h, taller proportions) |
+| `queue` | `cylinder3` (rotated) | `shape=cylinder3;size=8;direction=south;...` (60w×40h, horizontal cylinder) |
+| `collections` | `mxgraph.basic.layered_rect` | `shape=mxgraph.basic.layered_rect;size=4;...` |
 
-**Known issue**: These shapes are approximations. `boundary`, `control`, and `entity` don't match the standard UML robustness icons (circle-on-line, circle-with-arrow, circle-with-underline). This is issue #3 in the open issues list. The current shapes are the closest things available in draw.io's built-in shape libraries, but they don't look like the PlantUML rendering. David may need to provide custom stencils or we need to find better shape matches.
+**Shape history**: The UML shapes (`actor`, `boundary`, `control`, `entity`) now use draw.io's built-in UML shapes (`umlActor`, `umlBoundary`, `umlControl`, `umlEntity`) which correctly render the standard UML icons. Database and queue both use `cylinder3` — database is vertical (default), queue uses `direction: 'south'` for horizontal rotation. The `size` parameter on cylinder3 controls cap depth; 8 gives good proportions. Collections uses `size: 4` to make the layered/stacked offset visible.
 
 All participant styles share `fillColor=#dae8fc;strokeColor=#6c8ebf` (light blue fill, dark blue border). User-specified colors override via string replacement: `style.replace(/fillColor=[^;]+/, ...)`.
 
@@ -460,11 +460,11 @@ For created participants, `lifelineStartYOverrides` stores a per-participant ove
 Rectangle vertices centered on the lifeline:
 
 ```
-x: centerX - 6    (ACTIVATION_WIDTH/2 = 6)
+x: centerX - 5    (ACTIVATION_WIDTH/2 = 5)
 y: startY
-width: 12          (ACTIVATION_WIDTH)
+width: 10          (ACTIVATION_WIDTH)
 height: endY - startY, min 10px
-style: fillColor=#e6e6e6;strokeColor=#999999;
+style: fillColor=#ffffff;strokeColor=#000000; (with port constraints for UML lifeline connection)
 ```
 
 Activations are tracked in `activeActivations: Map<code, [{id, startY, color}]>`. It's a stack per participant to support nested activations (e.g. recursive calls). `_startActivation` pushes, `_endActivation` pops and emits the cell.
@@ -582,13 +582,14 @@ Width spans from first to last referenced participant (with FRAGMENT_PADDING).
 Background rectangles drawn behind everything else (first in z-order):
 
 ```
-style: rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#cccccc;dashed=1;verticalAlign=top;align=center;spacingTop=2;
-x: minX - padding
-height: full diagram height
-y: MARGIN_TOP - 15
+style: rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;strokeWidth=1;dashed=1;dashPattern=4 4;
+       verticalAlign=top;align=left;spacingTop=2;spacingLeft=5;fontStyle=1;fontSize=12;
+x: minX - BOX_PADDING
+y: headerStartY - BOX_TITLE_HEIGHT (28px above participant headers for title)
+height: diagramHeight - boxY + BOX_PADDING
 ```
 
-**Known issue #6**: PlantUML renders boxes as colored background columns behind the participants. Our current implementation draws a dashed outlined box with no fill, which doesn't match the PlantUML visual.
+When a box has a color, `fillOpacity=20` is appended so the background is semi-transparent but text remains fully visible. The dashed border is removed for colored boxes.
 
 ---
 
@@ -600,15 +601,20 @@ Simple top-down sequential layout. No overlap detection. No ELK.
 
 ```
 emit(parentId):
-  1. _layoutParticipants()         — assign X positions
-  2. _emitParticipantHeaders()     — draw header boxes at top (skip isCreated)
-  3. currentY += PARTICIPANT_HEIGHT + LIFELINE_TOP_MARGIN
-  4. _emitElements(diagram.elements)  — process everything, advancing currentY
-  5. currentY += ROW_HEIGHT          — bottom margin
-  6. _emitLifelines(startY, endY)    — vertical dashed lines
-  7. _closeAllActivations()          — close unclosed bars
-  8. _emitBoxes()                    — background boxes
-  9. Sort: [...boxCells, ...vertices, ...edges]  — z-order
+  1. If title exists, currentY += TITLE_HEIGHT
+  2. headerStartY = currentY
+  3. _layoutParticipants()         — assign X positions (with dynamic gap computation)
+  4. _emitTitle()                  — if title exists
+  5. _emitParticipantHeaders()     — draw header boxes at top (skip isCreated)
+  6. currentY += PARTICIPANT_HEIGHT + LIFELINE_TOP_MARGIN
+  7. _emitElements(diagram.elements)  — process everything, advancing currentY
+  8. currentY += ROW_HEIGHT          — bottom margin
+  9. _emitLifelines(startY, endY)    — vertical dashed lines
+  10. _closeAllActivations()         — close unclosed bars
+  11. _emitParticipantFooters()      — footer boxes (uses maxFooterHeight)
+  12. _emitParticipantGroups()       — invisible group containers with final height
+  13. _emitBoxes()                   — background boxes
+  14. Sort: [...boxCells, ...groups, ...lifelines, ...activations, ...otherVertices, ...messageEdges]
 ```
 
 ### 4.2 Layout Constants
@@ -616,10 +622,10 @@ emit(parentId):
 ```javascript
 PARTICIPANT_WIDTH: 120      // Default participant box width
 PARTICIPANT_HEIGHT: 40      // Default participant box height
-PARTICIPANT_GAP: 40         // Horizontal gap between participants
-LIFELINE_TOP_MARGIN: 10    // Gap between header and first element
+PARTICIPANT_GAP: 40         // Default minimum horizontal gap between participants
+LIFELINE_TOP_MARGIN: 30    // Gap between participant box and first element
 ROW_HEIGHT: 40              // Vertical space per message/element
-ACTIVATION_WIDTH: 12        // Activation bar width
+ACTIVATION_WIDTH: 10        // Activation bar width
 NOTE_WIDTH: 120             // Note width
 NOTE_HEIGHT: 30             // Minimum note height
 NOTE_MARGIN: 10             // Gap between note and lifeline
@@ -630,24 +636,60 @@ DELAY_HEIGHT: 30
 REF_HEIGHT: 30
 MARGIN_LEFT: 40             // Left edge of diagram
 MARGIN_TOP: 20              // Top edge of diagram
+TITLE_HEIGHT: 30            // Height reserved for diagram title
 EXO_ARROW_LENGTH: 60
 SELF_MESSAGE_WIDTH: 30      // Self-message loop width
 SELF_MESSAGE_HEIGHT: 20     // Self-message loop height
 ACTOR_WIDTH: 40
 ACTOR_HEIGHT: 50
+ICON_SHAPE_WIDTH: 50        // Width for boundary/control/entity icon shapes
+ICON_SHAPE_HEIGHT: 50       // Height for boundary/control/entity icon shapes
 ```
 
-### 4.3 Participant Width Calculation
+### 4.3 Participant Width/Height Overrides
 
-```javascript
-_participantWidth(p):
-  if actor: ACTOR_WIDTH (40)
-  else: max(PARTICIPANT_WIDTH, displayName.length * 8 + 20)
-```
+Some participant types have custom dimensions instead of the default 120×40:
 
-Uses a rough `8px per character` estimate. No actual text measurement.
+| Type | Width | Height |
+|---|---|---|
+| `participant` | max(120, textWidth) | 40 |
+| `actor` | 40 | 50 |
+| `boundary/control/entity` | 50 | 50 |
+| `database` | 40 | 60 |
+| `queue` | 60 | 40 |
+| `collections` | 50 | 50 |
 
-### 4.4 Vertical Space Consumption
+Text width estimate: `displayName.length * 8 + 20` px. No actual text measurement.
+
+### 4.4 Dynamic Horizontal Spacing
+
+`PARTICIPANT_GAP` (40px) is the minimum. The emitter pre-scans all diagram elements to compute per-gap spacing that fits content between each adjacent pair of participants:
+
+1. **`_computeGaps(codes, codeIndex, widths)`** — returns an array of edge-to-edge gaps (length = participants - 1)
+2. **`_scanElementsForGaps(...)`** — recursively walks all elements (including inside fragment sections)
+3. **`_requireGapForMessage(...)`** — only adjacent-pair (span=1) messages constrain individual gaps; multi-span messages rely on cumulative gaps being sufficient
+4. **`_estimateTextWidth(text)`** — 6px per character of the longest line
+
+**Center-to-center vs edge-to-edge**: Message labels span lifeline-to-lifeline (center-to-center). The gap variable controls edge-to-edge. Relationship: `center-to-center = gap + leftWidth/2 + rightWidth/2`. So: `needed_gap = labelWidth + 15 - halfLeft - halfRight` (15px = arrow padding).
+
+Gap requirements by element type:
+- **Messages (span=1)**: `labelWidth + 15 - halfLeft - halfRight`
+- **Self-messages**: `SELF_MESSAGE_WIDTH + labelWidth + 10` (right gap)
+- **Exo messages**: `labelWidth + 15` (boundary-side gap)
+- **Notes (LEFT/RIGHT)**: `noteWidth + NOTE_MARGIN`
+
+### 4.5 Title and Header Layout
+
+When the diagram has a `title`, space is reserved above the participant headers:
+
+1. `currentY` starts at `MARGIN_TOP` (20)
+2. If title exists, `currentY += TITLE_HEIGHT` (30)
+3. `headerStartY` is set to `currentY` — this is the Y where participant headers begin
+4. All group-relative coordinates use `this.headerStartY` instead of `LAYOUT.MARGIN_TOP`
+
+The `headerStartY` field is critical: participant groups, lifelines, activations, footers, and destroy markers all use it as the group origin for their relative coordinates.
+
+### 4.6 Vertical Space Consumption
 
 Each element type consumes vertical space:
 
@@ -675,13 +717,15 @@ Each element type consumes vertical space:
 
 2. **Fragment label shape is wrong** — The label tag is a plain rectangle. PlantUML uses a pentagon/tab shape (rectangle with diagonal bottom-right corner). Need to find or create a draw.io shape that matches.
 
-3. **Participant type shapes don't match UML convention** — `boundary` (`mxgraph.sysml.port`), `control` (`mxgraph.flowchart.on-page_reference`), `entity` (`mxgraph.er.entity`) are visual approximations, not the standard UML robustness analysis icons. The standard icons are: boundary = line with circle, control = circle with arrow, entity = circle with underline.
+3. **~~Participant type shapes don't match UML convention~~** — FIXED. Now uses draw.io's built-in UML shapes: `umlActor`, `umlBoundary`, `umlControl`, `umlEntity`. Database uses `cylinder3` (40w×60h). Queue uses `cylinder3` with `direction: south` for horizontal rotation (60w×40h). Collections uses `mxgraph.basic.layered_rect` with `size: 4`.
 
 4. **Notes cluster on the left** — Note positioning doesn't properly account for participant widths and can overlap lifelines. Notes on the left of the leftmost participant can go off-screen. Notes over two participants work but the width calculation uses centerX rather than accounting for box widths.
 
 5. **Arrow labels overlap lifelines** — Message labels use `verticalAlign=bottom` which places them above the arrow, but they can overlap with intermediate participant lifelines. No logic to detect or avoid this.
 
-6. **Box grouping visual treatment** — Current: dashed outline with no fill. PlantUML: colored column background. Need to use a filled rectangle with the box's color and appropriate opacity.
+6. **~~Box grouping visual treatment~~** — FIXED. Boxes now use `fillOpacity=20` with the box color for semi-transparent background. Dashed outline with no fill is the default (no color specified). Box title uses `fontStyle=1` (bold), `fontSize=12`, `BOX_TITLE_HEIGHT=28` for visible labels above participants.
+
+7. **Vertical spacing still needs tuning** — Various elements may not have exactly the right vertical spacing compared to PlantUML. The dynamic horizontal spacing is in place but there may still be visual differences in specific cases.
 
 ### Incomplete / Not Yet Emitted Features
 
@@ -692,10 +736,10 @@ Each element type consumes vertical space:
 | Return messages | ✅ (partial) | ✅ | ❌ (just advances Y) | Need activation stack to resolve source/target |
 | Multicast | ✅ | ✅ (stored) | ❌ | `msg.multicast[]` populated but not emitted as extra arrows |
 | Parallel `&` | ✅ | ✅ (flag) | ❌ | `msg.isParallel` set but no Y-sharing logic |
-| Title | ✅ | ✅ | ❌ | `diagram.title` stored but not rendered |
+| Title | ✅ | ✅ | ✅ | Rendered as bold 14px centered text above participants |
 | Participant stereotypes | ✅ | ✅ | ❌ | `p.stereotype` stored but not rendered |
 | Participant colors | ✅ | ✅ | ❌ | `p.color` stored but not rendered |
-| Participant ordering | ✅ | ✅ | ❌ | `p.order` stored but not rendered |
+| Participant ordering | ✅ | ✅ | ✅ | Interleaved sort: explicit `order` values mixed with declaration-index sort keys |
 | Arrow `bold` / `hidden` | ✅ (parsed) | ✅ | ❌ | `ArrowBody.BOLD`/`HIDDEN` not mapped to styles |
 | Arrow part (top/bottom) | ✅ | ✅ | ❌ | `ArrowPart.TOP_PART`/`BOTTOM_PART` not visually distinct |
 | Exo arrow direction | ✅ | ✅ | ⚠️ (partial) | Direction logic for `[<-` and `->]` variants may be wrong — needs visual testing |
@@ -833,3 +877,15 @@ These are documented so you don't reintroduce them:
 9. **HSpace `|| 20 ||` syntax** — PlantUML server rejects spaces inside pipes. Official regex allows no whitespace. Fixed test data to `||20||`.
 
 10. **`create` on pre-declared participant** — `addParticipant` silently discards duplicates, so `isCreated=true` was lost. Fixed: `if (isCreate && existing !== p) { existing.isCreated = true; }`.
+
+11. **Participant ordering with explicit `order`** — `getOrderedParticipants()` placed all explicitly ordered participants BEFORE all unordered ones. `Zed order 99` appeared first instead of last. Fixed by assigning implicit sortKey based on declaration index and sorting everyone together: `sortKey = p.order !== null ? p.order : i`.
+
+12. **Box title invisible** — Box used `opacity=20` which faded both fill AND text. Changed to `fillOpacity=20` which only affects the background. Also increased `BOX_TITLE_HEIGHT` from 15→28, added `fontStyle=1` (bold) and `fontSize=12`.
+
+13. **Footer height overflow** — `currentY += PARTICIPANT_HEIGHT` (40) didn't account for taller footer shapes like database (60px). Footer boxes overflowed their parent groups. Fixed by computing `maxFooterHeight` across all non-created participants.
+
+14. **PNG cutoff on tall diagrams** — draw.io CLI at 2x scale on diagrams ~4700px tall hit Chromium rendering limits (~9400px at 2x). Fixed by using 1x scale with `--crop --border 10 --disable-gpu` in `export-drawio.sh`.
+
+15. **Gap calculation edge-to-edge vs center-to-center** — Dynamic spacing initially computed gaps as edge-to-edge distances, but message labels span center-to-center (lifeline to lifeline). Fixed: `needed = labelWidth + 15 - halfLeft - halfRight` where halfLeft/halfRight are the half-widths of the two participants.
+
+16. **Multi-span messages inflating individual gaps** — Messages spanning multiple participants distributed label width across ALL crossed gaps, making intermediate gaps unnecessarily wide. Fixed by restricting `_requireGapForMessage` to span=1 (adjacent pair) messages only.
