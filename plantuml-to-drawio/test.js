@@ -11,6 +11,13 @@ import {
 	Message, ExoMessage, LifeEvent, Fragment, Note, Divider, Delay, HSpace, Reference, Box,
 	LifeEventType, GroupingType, NotePosition, NoteStyle
 } from './diagrams/sequence/SequenceModel.js';
+import { parseClassDiagram } from './diagrams/class/ClassParser.js';
+import { emitClassDiagram } from './diagrams/class/ClassEmitter.js';
+import {
+	EntityType, Visibility, MemberType, RelationDecor, LineStyle, Direction,
+	NotePosition as ClassNotePosition, SeparatorStyle,
+	ClassEntity, Member, Separator, Relationship, Package, Note as ClassNote, ClassDiagram
+} from './diagrams/class/ClassModel.js';
 
 let passed = 0;
 let failed = 0;
@@ -525,6 +532,415 @@ Alice -> Bob : hello
 	assert(!result.xml.includes('UserObject'), 'No UserObject wrapper');
 	assert(result.xml.includes('Alice'), 'Still contains cells');
 	console.log('  No-wrap mode: OK');
+}
+
+// ── Class Diagram Parser Tests ───────────────────────────────────────────
+
+section('Class Parser');
+
+{
+	const d = parseClassDiagram('class Foo');
+	assert(d.entities.has('Foo'), 'Simple class parsed');
+	assert(d.entities.get('Foo').type === EntityType.CLASS, 'Type is CLASS');
+	console.log('  Simple class: OK');
+}
+
+{
+	const d = parseClassDiagram('interface Bar');
+	assert(d.entities.has('Bar'), 'Interface parsed');
+	assert(d.entities.get('Bar').type === EntityType.INTERFACE, 'Type is INTERFACE');
+	console.log('  Interface: OK');
+}
+
+{
+	const d = parseClassDiagram('enum Color');
+	assert(d.entities.has('Color'), 'Enum parsed');
+	assert(d.entities.get('Color').type === EntityType.ENUM, 'Type is ENUM');
+	console.log('  Enum: OK');
+}
+
+{
+	const d = parseClassDiagram('abstract class Shape');
+	assert(d.entities.has('Shape'), 'Abstract class parsed');
+	assert(d.entities.get('Shape').type === EntityType.ABSTRACT_CLASS, 'Type is ABSTRACT_CLASS');
+	assert(d.entities.get('Shape').isAbstract === true, 'isAbstract is true');
+	console.log('  Abstract class: OK');
+}
+
+{
+	const d = parseClassDiagram('class "Display Name" as DN');
+	assert(d.entities.has('DN'), 'Alias code parsed');
+	assert(d.entities.get('DN').displayName === 'Display Name', 'Display name parsed');
+	console.log('  Alias (quoted as): OK');
+}
+
+{
+	const d = parseClassDiagram('class Box<T>');
+	assert(d.entities.has('Box'), 'Generic class parsed');
+	assert(d.entities.get('Box').genericParams === 'T', 'Generic param parsed');
+	console.log('  Generics: OK');
+}
+
+{
+	const d = parseClassDiagram('class Svc <<service>>');
+	assert(d.entities.has('Svc'), 'Stereotyped class parsed');
+	assert(d.entities.get('Svc').stereotypes[0] === 'service', 'Stereotype parsed');
+	console.log('  Stereotype: OK');
+}
+
+{
+	const d = parseClassDiagram('class Foo #LightBlue');
+	assert(d.entities.has('Foo'), 'Colored class parsed');
+	assert(d.entities.get('Foo').color === '#LightBlue', 'Color parsed');
+	console.log('  Color: OK');
+}
+
+{
+	const d = parseClassDiagram('class Foo extends Bar');
+	assert(d.entities.has('Foo'), 'Class with extends parsed');
+	assert(d.entities.get('Foo').extends[0] === 'Bar', 'Extends parsed');
+	console.log('  Extends: OK');
+}
+
+{
+	const d = parseClassDiagram(`class Foo {
+	+name : String
+	-age : int
+	#weight : double
+	~data : Object
+}`);
+	const entity = d.entities.get('Foo');
+	assert(entity !== undefined, 'Class with body parsed');
+	const members = entity.members.filter(m => !(m instanceof Separator));
+	assert(members.length === 4, 'Four members parsed');
+	assert(members[0].visibility === Visibility.PUBLIC, 'Public visibility');
+	assert(members[1].visibility === Visibility.PRIVATE, 'Private visibility');
+	assert(members[2].visibility === Visibility.PROTECTED, 'Protected visibility');
+	assert(members[3].visibility === Visibility.PACKAGE, 'Package visibility');
+	assert(members[0].name === 'name', 'Field name parsed');
+	assert(members[0].returnType === 'String', 'Field type parsed');
+	console.log('  Members with visibility: OK');
+}
+
+{
+	const d = parseClassDiagram(`class Foo {
+	+getName() : String
+	-setAge(age : int) : void
+}`);
+	const entity = d.entities.get('Foo');
+	const members = entity.members.filter(m => !(m instanceof Separator));
+	assert(members[0].memberType === MemberType.METHOD, 'Method detected');
+	assert(members[0].name === 'getName', 'Method name parsed');
+	assert(members[0].parameters === '', 'Empty params parsed');
+	assert(members[0].returnType === 'String', 'Return type parsed');
+	assert(members[1].parameters === 'age : int', 'Params with type parsed');
+	console.log('  Methods: OK');
+}
+
+{
+	const d = parseClassDiagram(`class Foo {
+	{static} +MAX : int
+	{abstract} +compute() : void
+}`);
+	const entity = d.entities.get('Foo');
+	const members = entity.members.filter(m => !(m instanceof Separator));
+	assert(members[0].isStatic === true, 'Static detected');
+	assert(members[1].isAbstract === true, 'Abstract detected');
+	console.log('  Static/abstract members: OK');
+}
+
+{
+	const d = parseClassDiagram(`class Foo {
+	+field1 : String
+	--
+	+method1() : void
+}`);
+	const entity = d.entities.get('Foo');
+	assert(entity.members.length === 3, 'Three items (field + separator + method)');
+	assert(entity.members[1] instanceof Separator, 'Separator detected');
+	assert(entity.members[1].style === SeparatorStyle.SOLID, 'Solid separator');
+	console.log('  Separator: OK');
+}
+
+// ── Class Parser — Relationships ─────────────────────────────────────────
+
+section('Class Parser — Relationships');
+
+{
+	const d = parseClassDiagram('A <|-- B');
+	assert(d.links.length === 1, 'One relationship');
+	assert(d.links[0].from === 'A', 'From is A');
+	assert(d.links[0].to === 'B', 'To is B');
+	assert(d.links[0].leftDecor === RelationDecor.EXTENDS, 'Left decor is EXTENDS');
+	assert(d.links[0].lineStyle === LineStyle.SOLID, 'Line is solid');
+	console.log('  Inheritance <|--: OK');
+}
+
+{
+	const d = parseClassDiagram('A <|.. B');
+	assert(d.links[0].leftDecor === RelationDecor.EXTENDS, 'Left decor is EXTENDS');
+	assert(d.links[0].lineStyle === LineStyle.DASHED, 'Line is dashed');
+	console.log('  Implementation <|..: OK');
+}
+
+{
+	const d = parseClassDiagram('A *-- B');
+	assert(d.links[0].leftDecor === RelationDecor.COMPOSITION, 'Left decor is COMPOSITION');
+	console.log('  Composition *--: OK');
+}
+
+{
+	const d = parseClassDiagram('A o-- B');
+	assert(d.links[0].leftDecor === RelationDecor.AGGREGATION, 'Left decor is AGGREGATION');
+	console.log('  Aggregation o--: OK');
+}
+
+{
+	const d = parseClassDiagram('A --> B');
+	assert(d.links[0].rightDecor === RelationDecor.ARROW, 'Right decor is ARROW');
+	console.log('  Association -->: OK');
+}
+
+{
+	const d = parseClassDiagram('A ..> B');
+	assert(d.links[0].rightDecor === RelationDecor.ARROW, 'Right decor is ARROW');
+	assert(d.links[0].lineStyle === LineStyle.DASHED, 'Line is dashed');
+	console.log('  Dependency ..>: OK');
+}
+
+{
+	const d = parseClassDiagram('A --> B : uses');
+	assert(d.links[0].label === 'uses', 'Label parsed');
+	console.log('  Link with label: OK');
+}
+
+{
+	const d = parseClassDiagram('A "1" --> "*" B');
+	assert(d.links[0].leftLabel === '1', 'Left cardinality');
+	assert(d.links[0].rightLabel === '*', 'Right cardinality');
+	console.log('  Cardinality: OK');
+}
+
+{
+	const d = parseClassDiagram('A -[#red]-> B');
+	assert(d.links[0].color === '#red', 'Link color parsed');
+	console.log('  Link color: OK');
+}
+
+{
+	const d = parseClassDiagram('A -- B');
+	assert(d.links[0].leftDecor === RelationDecor.NONE, 'No left decor');
+	assert(d.links[0].rightDecor === RelationDecor.NONE, 'No right decor');
+	console.log('  Plain link --: OK');
+}
+
+// ── Class Parser — Packages ──────────────────────────────────────────────
+
+section('Class Parser — Packages');
+
+{
+	const d = parseClassDiagram(`package com.example {
+	class Foo
+}`);
+	assert(d.packages.length === 1, 'One package');
+	assert(d.packages[0].name === 'com.example', 'Package name');
+	assert(d.packages[0].entities.length === 1, 'One entity in package');
+	assert(d.packages[0].entities[0] === 'Foo', 'Foo in package');
+	console.log('  Simple package: OK');
+}
+
+{
+	const d = parseClassDiagram(`package outer {
+	package inner {
+		class Bar
+	}
+}`);
+	assert(d.packages[0].subPackages.length === 1, 'Nested package');
+	assert(d.packages[0].subPackages[0].name === 'inner', 'Inner package name');
+	assert(d.packages[0].subPackages[0].entities[0] === 'Bar', 'Bar in inner');
+	console.log('  Nested packages: OK');
+}
+
+// ── Class Parser — Notes ─────────────────────────────────────────────────
+
+section('Class Parser — Notes');
+
+{
+	const d = parseClassDiagram(`class Foo
+note left of Foo : A note`);
+	assert(d.notes.length === 1, 'One note');
+	assert(d.notes[0].position === ClassNotePosition.LEFT, 'Note position is LEFT');
+	assert(d.notes[0].entityCode === 'Foo', 'Note attached to Foo');
+	assert(d.notes[0].text === 'A note', 'Note text');
+	console.log('  Single-line note: OK');
+}
+
+{
+	const d = parseClassDiagram(`class Foo
+note left of Foo
+	Line 1
+	Line 2
+end note`);
+	assert(d.notes[0].text.includes('Line 1'), 'Multi-line note text');
+	assert(d.notes[0].text.includes('Line 2'), 'Multi-line note text line 2');
+	console.log('  Multi-line note: OK');
+}
+
+{
+	const d = parseClassDiagram('note "Floating" as N1');
+	assert(d.notes.length === 1, 'Floating note parsed');
+	assert(d.notes[0].alias === 'N1', 'Note alias');
+	assert(d.notes[0].text === 'Floating', 'Note text');
+	console.log('  Floating note: OK');
+}
+
+{
+	const d = parseClassDiagram(`class A
+class B
+A --> B
+note on link : Link note`);
+	assert(d.notes.length === 1, 'Note on link parsed');
+	assert(d.notes[0].isOnLink === true, 'isOnLink is true');
+	assert(d.notes[0].text === 'Link note', 'Note on link text');
+	console.log('  Note on link: OK');
+}
+
+// ── Class Parser — Other ────────────────────────────────────────────────
+
+section('Class Parser — Other');
+
+{
+	const d = parseClassDiagram(`class Foo
+Foo : +aField : String
+Foo : -aMethod() : void`);
+	const entity = d.entities.get('Foo');
+	assert(entity.members.length === 2, 'Two shorthand members');
+	assert(entity.members[0].name === 'aField', 'Shorthand field name');
+	assert(entity.members[1].memberType === MemberType.METHOD, 'Shorthand method detected');
+	console.log('  Shorthand members: OK');
+}
+
+{
+	const d = parseClassDiagram('<> diamond1');
+	assert(d.entities.has('diamond1'), 'Diamond parsed');
+	assert(d.entities.get('diamond1').type === EntityType.DIAMOND, 'Type is DIAMOND');
+	console.log('  Diamond association: OK');
+}
+
+{
+	const d = parseClassDiagram('() "API" as api');
+	assert(d.entities.has('api'), 'Lollipop parsed');
+	assert(d.entities.get('api').type === EntityType.LOLLIPOP_FULL, 'Type is LOLLIPOP_FULL');
+	assert(d.entities.get('api').displayName === 'API', 'Lollipop display name');
+	console.log('  Lollipop: OK');
+}
+
+{
+	const d = parseClassDiagram('title My Title');
+	assert(d.title === 'My Title', 'Title parsed');
+	console.log('  Title: OK');
+}
+
+// ── Class Emitter Tests ─────────────────────────────────────────────────
+
+section('Class Emitter');
+
+{
+	const d = parseClassDiagram(`class Foo {
+	+name : String
+	-age : int
+}`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('swimlane'), 'Swimlane style used');
+	assert(xml.includes('+ name'), 'Field name in output');
+	assert(xml.includes('- age'), 'Private field in output');
+	console.log('  Class box with members: OK');
+}
+
+{
+	const d = parseClassDiagram(`class A
+class B
+A <|-- B`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('edge="1"'), 'Edge present');
+	assert(xml.includes('endArrow=block') || xml.includes('startArrow=block'), 'Block arrow for extends');
+	console.log('  Extends edge: OK');
+}
+
+{
+	const d = parseClassDiagram(`class A
+class B
+A *-- B`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('startArrow=diamond'), 'Diamond arrow for composition');
+	assert(xml.includes('startFill=1'), 'Filled diamond for composition');
+	console.log('  Composition edge: OK');
+}
+
+{
+	const d = parseClassDiagram(`class A
+class B
+A o-- B`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('startArrow=diamond'), 'Diamond arrow for aggregation');
+	assert(xml.includes('startFill=0'), 'Hollow diamond for aggregation');
+	console.log('  Aggregation edge: OK');
+}
+
+{
+	const d = parseClassDiagram(`package test {
+	class Foo
+}`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('shape=folder'), 'Package uses folder shape');
+	console.log('  Package rendering: OK');
+}
+
+{
+	const d = parseClassDiagram(`class Foo
+note left of Foo : A note`);
+	const cells = emitClassDiagram(d, 'parent-1');
+	const xml = cells.join('\n');
+	assert(xml.includes('shape=note'), 'Note shape used');
+	console.log('  Note rendering: OK');
+}
+
+// ── Class Pipeline Tests ────────────────────────────────────────────────
+
+section('Class Pipeline');
+
+{
+	const result = convert(`@startuml
+class Foo {
+	+name : String
+}
+class Bar
+Foo <|-- Bar
+@enduml`);
+	assert(result.diagramType === 'class', 'Detected as class diagram');
+	assert(result.xml.includes('<mxfile>'), 'Has mxfile wrapper');
+	assert(result.xml.includes('UserObject'), 'Has UserObject');
+	assert(result.xml.includes('Foo'), 'Contains Foo');
+	console.log('  Basic class conversion: OK');
+}
+
+{
+	const type = detectDiagramType(`class Foo
+class Bar
+Foo <|-- Bar`);
+	assert(type === 'class', 'Class diagram detected');
+	console.log('  Class type detection: OK');
+}
+
+{
+	const seqType = detectDiagramType(`Alice -> Bob : hello`);
+	assert(seqType === 'sequence', 'Sequence still detected correctly');
+	console.log('  Sequence type still works: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

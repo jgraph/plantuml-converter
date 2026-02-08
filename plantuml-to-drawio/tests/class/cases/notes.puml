@@ -1,0 +1,25 @@
+@startuml
+class MyClass {
+	+field : String
+}
+
+class OtherClass {
+	+data : int
+}
+
+note left of MyClass : Left note
+
+note right of MyClass : Right note
+
+note top of OtherClass : Top note
+
+note bottom of OtherClass
+	Multi-line
+	bottom note
+end note
+
+note "Floating note" as N1
+
+MyClass --> OtherClass : link
+note on link : Note on the link
+@enduml

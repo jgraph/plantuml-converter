@@ -11,6 +11,7 @@
  *   - Re-generate support
  *
  * Currently supports:
+ *   - Class diagrams
  *   - Sequence diagrams
  *
  * Designed to be extended with additional diagram types (class, activity,
@@ -19,6 +20,8 @@
 
 import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
 import { emitSequenceDiagram } from './diagrams/sequence/SequenceEmitter.js';
+import { parseClassDiagram } from './diagrams/class/ClassParser.js';
+import { emitClassDiagram } from './diagrams/class/ClassEmitter.js';
 import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.js';
 
 // ── Diagram type registry ──────────────────────────────────────────────────
@@ -31,6 +34,35 @@ import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.j
  *   emit(model, parentId) → string[]  Emit model to mxGraph cell XML strings
  */
 const diagramHandlers = new Map();
+
+// Register class diagram handler (before sequence — sequence's heuristic is broad
+// and would match class diagrams with arrows like -->)
+diagramHandlers.set('class', {
+	detect(text) {
+		// Explicit @startclass
+		if (/@startclass\b/i.test(text)) return true;
+
+		const lines = text.split('\n');
+		let classKeywords = 0;
+		let classRelationships = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			// Class/interface/enum/abstract declarations
+			if (/^(?:abstract\s+class|class|interface|enum|annotation|entity|struct|record)\s+/i.test(trimmed)) {
+				classKeywords++;
+			}
+			// Class-specific relationship patterns: <|--, *--, o--, ..|>, <|..
+			if (/(?:<\|--|--\|>|\*--|--\*|o--|--o|<\|\.\.|\.\.?\|>)/.test(trimmed)) {
+				classRelationships++;
+			}
+		}
+
+		return classKeywords >= 2 || (classKeywords >= 1 && classRelationships >= 1);
+	},
+	parse: parseClassDiagram,
+	emit: emitClassDiagram
+});
 
 // Register sequence diagram handler
 diagramHandlers.set('sequence', {

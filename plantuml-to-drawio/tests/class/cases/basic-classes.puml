@@ -1,0 +1,37 @@
+@startuml
+class Animal {
+	+name : String
+	-age : int
+	#weight : double
+	--
+	+getName() : String
+	-setAge(age : int) : void
+	+{abstract} speak() : String
+	+{static} count() : int
+}
+
+abstract class Shape {
+	-color : String
+	+{abstract} area() : double
+	+{abstract} perimeter() : double
+}
+
+interface Drawable {
+	+draw() : void
+	+resize(factor : double) : void
+}
+
+enum Status {
+	ACTIVE
+	INACTIVE
+	PENDING
+}
+
+class Circle extends Shape implements Drawable {
+	-radius : double
+	+area() : double
+	+perimeter() : double
+	+draw() : void
+	+resize(factor : double) : void
+}
+@enduml

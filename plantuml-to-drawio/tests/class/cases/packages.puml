@@ -1,0 +1,27 @@
+@startuml
+package com.example {
+	class Foo {
+		+bar : String
+	}
+
+	package inner {
+		class Bar {
+			+baz : int
+		}
+	}
+
+	Foo --> Bar
+}
+
+package standalone {
+	class Standalone {
+		+value : int
+	}
+}
+
+class OutsideClass {
+	+data : String
+}
+
+OutsideClass --> Foo
+@enduml

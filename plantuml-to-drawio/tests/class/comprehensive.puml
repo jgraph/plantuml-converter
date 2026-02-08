@@ -1,0 +1,237 @@
+@startuml
+
+title Class Diagram — Comprehensive Test
+
+' ── Entity types ─────────────────────────────────────────────
+class SimpleClass {
+	+publicField : String
+	-privateField : int
+	#protectedField : boolean
+	~packageField : double
+	--
+	+publicMethod() : void
+	-privateMethod(x : int) : String
+	#protectedMethod() : List<String>
+	~packageMethod() : void
+}
+
+abstract class AbstractBase {
+	-id : long
+	+{abstract} doWork() : void
+	+concreteMethod() : String
+}
+
+interface Serializable {
+	+serialize() : byte[]
+	+deserialize(data : byte[]) : void
+}
+
+interface Comparable<T> {
+	+compareTo(other : T) : int
+}
+
+enum Color {
+	RED
+	GREEN
+	BLUE
+	+getRgb() : int
+}
+
+annotation Deprecated {
+	reason : String
+}
+
+entity Customer {
+	*id : long
+	--
+	name : String
+	email : String
+}
+
+struct Point {
+	x : double
+	y : double
+}
+
+record PersonRecord {
+	name : String
+	age : int
+}
+
+' ── Aliases and display names ────────────────────────────────
+class "Long Display Name" as LDN {
+	+value : String
+}
+
+class "Aliased Class" as AC {
+	+data : int
+}
+
+' ── Generics ─────────────────────────────────────────────────
+class Container<T> {
+	-items : List<T>
+	+add(item : T) : void
+	+get(index : int) : T
+}
+
+class Pair<K, V> {
+	-key : K
+	-value : V
+}
+
+' ── Stereotypes and colors ───────────────────────────────────
+class ServiceLayer <<service>> #LightBlue {
+	+process() : void
+}
+
+class Repository <<repository>> #LightGreen {
+	+findAll() : List
+	+save(entity : Object) : void
+}
+
+class Controller <<controller>> {
+	+handleRequest() : Response
+}
+
+' ── Static and abstract members ──────────────────────────────
+class Utility {
+	{static} +MAX_SIZE : int
+	{static} +getInstance() : Utility
+	{abstract} #compute() : double
+	..
+	+normalField : String
+	==
+	+normalMethod() : void
+}
+
+' ── Extends and implements ───────────────────────────────────
+class ConcreteClass extends AbstractBase implements Serializable {
+	+doWork() : void
+	+serialize() : byte[]
+	+deserialize(data : byte[]) : void
+}
+
+' ── Relationships ────────────────────────────────────────────
+
+' Inheritance (extends)
+AbstractBase <|-- ConcreteClass
+SimpleClass <|-- LDN
+
+' Implementation (implements)
+Serializable <|.. ConcreteClass
+Comparable <|.. SimpleClass
+
+' Composition
+SimpleClass *-- Point : has position
+
+' Aggregation
+SimpleClass o-- Color : uses color
+
+' Association
+Controller --> ServiceLayer : calls
+ServiceLayer --> Repository : uses
+
+' Dependency
+Controller ..> Serializable : depends
+
+' Plain link
+Utility -- Container
+
+' Bidirectional
+Pair <--> Container : maps to
+
+' ── Cardinality ──────────────────────────────────────────────
+Customer "1" --> "*" SimpleClass : orders
+Repository "1" o-- "0..*" Customer : manages
+
+' ── Direction hints ──────────────────────────────────────────
+Controller -down-> ServiceLayer
+ServiceLayer -right-> Repository
+
+' ── Link colors ──────────────────────────────────────────────
+Point -[#red]-> Utility : red link
+Color .[#blue].> Container : blue dashed
+
+' ── Packages ─────────────────────────────────────────────────
+package com.example.model {
+	class Order {
+		+id : long
+		+total : double
+	}
+
+	class OrderItem {
+		+quantity : int
+		+price : double
+	}
+
+	Order *-- OrderItem
+}
+
+package com.example.service {
+	class OrderService {
+		+createOrder() : Order
+		+cancelOrder(id : long) : void
+	}
+
+	OrderService --> Order : creates
+}
+
+' ── Nested packages ──────────────────────────────────────────
+package com.example.util {
+	package validation {
+		class Validator {
+			+validate(obj : Object) : boolean
+		}
+	}
+
+	package formatting {
+		class Formatter {
+			+format(obj : Object) : String
+		}
+	}
+}
+
+' ── Notes ────────────────────────────────────────────────────
+note left of SimpleClass : This is a simple class
+
+note right of AbstractBase
+	This is a multi-line
+	note on AbstractBase
+end note
+
+note top of Serializable : Interface note
+
+note bottom of Color : Enum note
+
+note "This is a floating note" as FloatingNote
+
+note on link : Important relationship
+
+' ── Shorthand member syntax ──────────────────────────────────
+SimpleClass : +anotherField : String
+SimpleClass : -anotherMethod() : void
+
+' ── Lollipop ─────────────────────────────────────────────────
+class DataAccess
+() "Readable" as R
+DataAccess -up- R
+
+' ── Diamond association ──────────────────────────────────────
+<> diamond1
+Order .. diamond1
+OrderItem .. diamond1
+
+' ── Together grouping ────────────────────────────────────────
+together {
+	class GroupedA {
+		+a : int
+	}
+	class GroupedB {
+		+b : int
+	}
+}
+
+' ── Hide/show ────────────────────────────────────────────────
+hide Formatter methods
+
+@enduml

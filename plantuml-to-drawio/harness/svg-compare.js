@@ -5,38 +5,77 @@
  * a draw.io XML file (candidate). Extracts normalized diagrams
  * from both, matches elements, and produces a diff report.
  *
+ * Supports multiple diagram types via type-specific extractors.
+ *
  * CLI usage:
- *   node harness/svg-compare.js <reference.svg> <candidate.drawio>
+ *   node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class]
  *
  * Programmatic usage:
  *   import { compareSvgToDrawio } from './svg-compare.js';
- *   const report = compareSvgToDrawio(svgText, drawioXmlText);
+ *   const report = compareSvgToDrawio(svgText, drawioXmlText, 'class');
  */
 
 import { readFileSync } from 'fs';
-import { extractFromPlantUmlSvg } from './extract-plantuml-svg-sequence.js';
-import { extractFromDrawioXml } from './extract-drawio-xml-sequence.js';
-import { matchDiagrams, diffDiagrams, buildReport } from './normalize-sequence.js';
+
+// ── Sequence diagram extractors (default) ────────────────────────────────
+import { extractFromPlantUmlSvg as extractSeqFromSvg } from './extract-plantuml-svg-sequence.js';
+import { extractFromDrawioXml as extractSeqFromDrawio } from './extract-drawio-xml-sequence.js';
+import { matchDiagrams as matchSeq, diffDiagrams as diffSeq, buildReport as buildSeqReport } from './normalize-sequence.js';
+
+// ── Class diagram extractors ─────────────────────────────────────────────
+import { extractFromPlantUmlSvg as extractClassFromSvg } from './extract-plantuml-svg-class.js';
+import { extractFromDrawioXml as extractClassFromDrawio } from './extract-drawio-xml-class.js';
+import { matchDiagrams as matchClass, diffDiagrams as diffClass, buildReport as buildClassReport } from './normalize-class.js';
+
+// ── Extractor registry ────────────────────────────────────────────────────
+
+const extractors = {
+	sequence: {
+		extractFromSvg: extractSeqFromSvg,
+		extractFromDrawio: extractSeqFromDrawio,
+		match: matchSeq,
+		diff: diffSeq,
+		buildReport: buildSeqReport,
+	},
+	class: {
+		extractFromSvg: extractClassFromSvg,
+		extractFromDrawio: extractClassFromDrawio,
+		match: matchClass,
+		diff: diffClass,
+		buildReport: buildClassReport,
+	},
+};
 
 /**
  * Compare a PlantUML SVG (reference) against a draw.io XML (candidate).
  * Returns a report object: { blocking, important, cosmetic, summary, score }
+ *
+ * @param {string} svgText - PlantUML SVG content
+ * @param {string} drawioXmlText - draw.io XML content
+ * @param {string} [diagramType='sequence'] - Diagram type for extractor selection
  */
-export function compareSvgToDrawio(svgText, drawioXmlText) {
-	const refDiagram = extractFromPlantUmlSvg(svgText);
-	const candDiagram = extractFromDrawioXml(drawioXmlText);
-	const matches = matchDiagrams(refDiagram, candDiagram);
-	const diff = diffDiagrams(matches);
-	return buildReport(diff, refDiagram, candDiagram);
+export function compareSvgToDrawio(svgText, drawioXmlText, diagramType) {
+	const type = diagramType || 'sequence';
+	const ext = extractors[type];
+
+	if (!ext) {
+		throw new Error(`No structural extractors for diagram type: ${type}. Supported: ${Object.keys(extractors).join(', ')}`);
+	}
+
+	const refDiagram = ext.extractFromSvg(svgText);
+	const candDiagram = ext.extractFromDrawio(drawioXmlText);
+	const matches = ext.match(refDiagram, candDiagram);
+	const diff = ext.diff(matches);
+	return ext.buildReport(diff, refDiagram, candDiagram);
 }
 
 /**
  * Compare files by path.
  */
-export function compareSvgToDrawioFiles(svgPath, drawioPath) {
+export function compareSvgToDrawioFiles(svgPath, drawioPath, diagramType) {
 	const svgText = readFileSync(svgPath, 'utf-8');
 	const drawioXmlText = readFileSync(drawioPath, 'utf-8');
-	return compareSvgToDrawio(svgText, drawioXmlText);
+	return compareSvgToDrawio(svgText, drawioXmlText, diagramType);
 }
 
 // ── CLI mode ──────────────────────────────────────────────────────────────
@@ -50,7 +89,7 @@ if (isMain) {
 	const args = process.argv.slice(2);
 
 	if (args.length < 2) {
-		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio>');
+		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class]');
 		console.error('');
 		console.error('Compares a PlantUML SVG against a draw.io XML structurally.');
 		console.error('Output: JSON report to stdout.');
@@ -61,31 +100,49 @@ if (isMain) {
 	const drawioPath = args[1];
 	const verbose = args.includes('--verbose');
 
+	let diagramType = 'sequence';
+	const typeIdx = args.indexOf('--type');
+	if (typeIdx >= 0 && typeIdx + 1 < args.length) {
+		diagramType = args[typeIdx + 1];
+	}
+
 	try {
-		const report = compareSvgToDrawioFiles(svgPath, drawioPath);
+		const report = compareSvgToDrawioFiles(svgPath, drawioPath, diagramType);
 
 		if (verbose) {
-			// Also show extracted diagrams for debugging
+			const ext = extractors[diagramType];
 			const svgText = readFileSync(svgPath, 'utf-8');
 			const drawioXmlText = readFileSync(drawioPath, 'utf-8');
-			const ref = extractFromPlantUmlSvg(svgText);
-			const cand = extractFromDrawioXml(drawioXmlText);
+			const ref = ext.extractFromSvg(svgText);
+			const cand = ext.extractFromDrawio(drawioXmlText);
 
-			console.error('── Reference (PlantUML SVG) ──');
-			console.error(`  Participants (${ref.participants.length}): ${ref.participants.map(p => p.name).join(', ')}`);
-			console.error(`  Messages (${ref.messages.length}): ${ref.messages.map(m => `${m.from}→${m.to}: ${m.label}`).join(', ')}`);
-			console.error(`  Activations: ${ref.activations.length}`);
-			console.error(`  Fragments: ${ref.fragments.length}`);
-			console.error(`  Notes: ${ref.notes.length}`);
-			console.error(`  Dividers: ${ref.dividers.length}`);
-			console.error('');
-			console.error('── Candidate (draw.io XML) ──');
-			console.error(`  Participants (${cand.participants.length}): ${cand.participants.map(p => p.name).join(', ')}`);
-			console.error(`  Messages (${cand.messages.length}): ${cand.messages.map(m => `${m.from}→${m.to}: ${m.label}`).join(', ')}`);
-			console.error(`  Activations: ${cand.activations.length}`);
-			console.error(`  Fragments: ${cand.fragments.length}`);
-			console.error(`  Notes: ${cand.notes.length}`);
-			console.error(`  Dividers: ${cand.dividers.length}`);
+			if (diagramType === 'sequence') {
+				console.error('── Reference (PlantUML SVG) ──');
+				console.error(`  Participants (${ref.participants.length}): ${ref.participants.map(p => p.name).join(', ')}`);
+				console.error(`  Messages (${ref.messages.length}): ${ref.messages.map(m => `${m.from}→${m.to}: ${m.label}`).join(', ')}`);
+				console.error(`  Activations: ${ref.activations.length}`);
+				console.error(`  Fragments: ${ref.fragments.length}`);
+				console.error(`  Notes: ${ref.notes.length}`);
+				console.error(`  Dividers: ${ref.dividers.length}`);
+				console.error('');
+				console.error('── Candidate (draw.io XML) ──');
+				console.error(`  Participants (${cand.participants.length}): ${cand.participants.map(p => p.name).join(', ')}`);
+				console.error(`  Messages (${cand.messages.length}): ${cand.messages.map(m => `${m.from}→${m.to}: ${m.label}`).join(', ')}`);
+				console.error(`  Activations: ${cand.activations.length}`);
+				console.error(`  Fragments: ${cand.fragments.length}`);
+				console.error(`  Notes: ${cand.notes.length}`);
+				console.error(`  Dividers: ${cand.dividers.length}`);
+			} else if (diagramType === 'class') {
+				console.error('── Reference (PlantUML SVG) ──');
+				console.error(`  Classes (${ref.classes.length}): ${ref.classes.map(c => c.name).join(', ')}`);
+				console.error(`  Relationships: ${ref.relationships.length}`);
+				console.error(`  Notes: ${ref.notes.length}`);
+				console.error('');
+				console.error('── Candidate (draw.io XML) ──');
+				console.error(`  Classes (${cand.classes.length}): ${cand.classes.map(c => c.name).join(', ')}`);
+				console.error(`  Relationships: ${cand.relationships.length}`);
+				console.error(`  Notes: ${cand.notes.length}`);
+			}
 			console.error('');
 		}
 

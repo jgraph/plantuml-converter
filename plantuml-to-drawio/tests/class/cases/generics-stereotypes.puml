@@ -1,0 +1,27 @@
+@startuml
+class Box<T> {
+	-content : T
+	+get() : T
+	+set(item : T) : void
+}
+
+class Map<K, V> {
+	+put(key : K, value : V) : void
+	+get(key : K) : V
+}
+
+class Service <<service>> {
+	+execute() : void
+}
+
+class Repository <<repository>> #LightGreen {
+	+findById(id : long) : Object
+}
+
+class Controller <<controller>> #LightBlue {
+	+handle() : Response
+}
+
+Controller --> Service
+Service --> Repository
+@enduml

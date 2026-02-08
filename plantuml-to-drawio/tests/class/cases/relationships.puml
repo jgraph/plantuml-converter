@@ -1,0 +1,50 @@
+@startuml
+class A
+class B
+class C
+class D
+class E
+class F
+class G
+class H
+class I
+
+' Inheritance
+A <|-- B
+
+' Implementation (dashed)
+A <|.. C
+
+' Composition
+A *-- D
+
+' Aggregation
+A o-- E
+
+' Association (directed)
+A --> F : uses
+
+' Dependency (dashed arrow)
+A ..> G : depends on
+
+' Plain link
+A -- H
+
+' Bidirectional
+A <--> I
+
+' Cardinality
+B "1" --> "*" C : has many
+D "0..1" o-- "1..*" E : optional
+
+' Link labels and qualifiers
+F --> G : creates
+
+' Bold link
+A ==> B : bold
+
+' Direction hints
+C -left-> D
+E -up-> F
+G -down-> H
+@enduml

@@ -253,7 +253,7 @@ async function processTestCase(pumlPath, args, jarPath) {
 			logStep('Running structural comparison ...');
 			const svgText = readFileSync(svgPath, 'utf-8');
 			const drawioXml = readFileSync(drawioPath, 'utf-8');
-			const report = compareSvgToDrawio(svgText, drawioXml);
+			const report = compareSvgToDrawio(svgText, drawioXml, args.type);
 			result.report = report;
 			result.steps.structural = 'ok';
 
