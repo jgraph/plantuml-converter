@@ -67,19 +67,40 @@ export function extractFromPlantUmlSvg(svgText) {
 
 		if (textMatches.length === 0) continue;
 
-		// The display name is typically the last non-stereotype text
-		const name = textMatches[textMatches.length - 1];
+		// Filter out stereotype text (guillemets «...» rendered as &#171;...&#187;)
+		const nonStereotypeTexts = textMatches.filter(t =>
+			!t.includes('\u00AB') && !t.includes('\u00BB') &&
+			!t.includes('&#171;') && !t.includes('&#187;') &&
+			!/^<<.*>>$/.test(t)
+		);
+
+		// The display name is the last non-stereotype text
+		const name = nonStereotypeTexts.length > 0
+			? nonStereotypeTexts[nonStereotypeTexts.length - 1]
+			: textMatches[textMatches.length - 1];
+
+		// Determine if this is an actor, usecase, or note
+		// Notes have <path> with yellow-ish fills (#FEFF, #FFFF) and no <ellipse>
+		// Actors have an <ellipse> (head) AND <path> elements (stick figure body/limbs)
+		// Usecases have only <ellipse> (large oval) with no <path> elements
+		const hasEllipse = entitySvg.includes('<ellipse');
+		const hasPaths = entitySvg.includes('<path');
+		const hasNoteFill = /fill="#F[EF]F[FE]/.test(entitySvg) || /fill="#FFFF[EDE]/.test(entitySvg);
+
+		// Skip notes — they appear as entities but have yellow fills and no ellipse
+		if (!hasEllipse && hasPaths && hasNoteFill) {
+			// Collect all text from the note for the NNote
+			const noteText = nonStereotypeTexts.join('\n');
+			if (noteText) {
+				diagram.notes.push(new NNote(noteText));
+			}
+			continue;
+		}
 
 		realEntityIds.add(entityId);
 		entityMap.set(entityId, name);
 
-		// Determine if this is an actor or usecase
-		// Actors have stick figure paths but no <ellipse>
-		// Usecases have <ellipse> elements
-		const hasEllipse = entitySvg.includes('<ellipse');
-		const hasStickFigurePaths = (entitySvg.match(/<path/g) || []).length >= 3;
-
-		if (hasEllipse && !hasStickFigurePaths) {
+		if (hasEllipse && !hasPaths) {
 			entityTypeMap.set(entityId, 'usecase');
 			const uc = new NUsecase(name);
 			diagram.usecases.push(uc);

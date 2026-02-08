@@ -1249,7 +1249,7 @@ section('Usecase Emitter');
 	const cells = emitUsecaseDiagram(d, 'parent-1');
 	const xml = cells.join('\n');
 	assert(cells.length > 0, 'Should emit usecase cell');
-	assert(xml.includes('ellipse=1'), 'Should use ellipse shape');
+	assert(xml.includes('shape=ellipse'), 'Should use ellipse shape');
 	console.log('  Usecase emission: OK');
 }
 

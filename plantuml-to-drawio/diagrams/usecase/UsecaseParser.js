@@ -314,7 +314,8 @@ class UsecaseParser {
 
 	_parseActorDeclaration(line) {
 		// actor/ "Display" as Code | actor/ Code | actor "Display" as Code | actor Code
-		const re = /^(actor\/|actor)\s+(?:"([^"]+)"\s+as\s+(\w[\w.]*)|(\w[\w.]*)(?:\s+as\s+"([^"]+)")?)(?:\s*(<<[^>]+>>))?(?:\s*(#[a-zA-Z0-9]+))?\s*$/i;
+		// Also: actor DisplayName as Code (both unquoted)
+		const re = /^(actor\/|actor)\s+(?:"([^"]+)"\s+as\s+(\w[\w.]*)|(\w[\w.]*)\s+as\s+"([^"]+)"|(\w[\w.]*)\s+as\s+(\w[\w.]*)|(\w[\w.]*))(?:\s*(<<[^>]+>>))?(?:\s*(#[a-zA-Z0-9]+))?\s*$/i;
 		const m = line.match(re);
 		if (m === null) return false;
 
@@ -331,10 +332,14 @@ class UsecaseParser {
 			// Code as "Display Name"
 			code = m[4];
 			displayName = m[5];
-		} else if (m[4]) {
+		} else if (m[6] && m[7]) {
+			// DisplayName as Code (both unquoted)
+			displayName = m[6];
+			code = m[7];
+		} else if (m[8]) {
 			// Code alone
-			code = m[4];
-			displayName = m[4];
+			code = m[8];
+			displayName = m[8];
 		} else {
 			return false;
 		}
@@ -342,16 +347,16 @@ class UsecaseParser {
 		const element = new UsecaseElement(code, displayName, type);
 
 		// Parse stereotype
-		if (m[6]) {
-			const stereoMatch = m[6].match(/<<([^>]+)>>/);
+		if (m[9]) {
+			const stereoMatch = m[9].match(/<<([^>]+)>>/);
 			if (stereoMatch) {
 				element.stereotypes.push(stereoMatch[1]);
 			}
 		}
 
 		// Parse color
-		if (m[7]) {
-			element.color = m[7];
+		if (m[10]) {
+			element.color = m[10];
 		}
 
 		// Assign to current container
@@ -369,8 +374,8 @@ class UsecaseParser {
 
 	_parseUsecaseDeclaration(line) {
 		// usecase/ "Display" as Code | usecase/ Code | usecase "Display" as Code | usecase Code
-		// Also handle: usecase (Display Name) as Code
-		const re = /^(usecase\/|usecase)\s+(?:"([^"]+)"\s+as\s+(\w[\w.]*)|(\w[\w.]*)(?:\s+as\s+"([^"]+)")?|\(([^)]+)\)\s+as\s+(\w[\w.]*))(?:\s*(<<[^>]+>>))?(?:\s*(#[a-zA-Z0-9]+))?\s*$/i;
+		// Also handle: usecase (Display Name) as Code, usecase DisplayName as Code
+		const re = /^(usecase\/|usecase)\s+(?:"([^"]+)"\s+as\s+(\w[\w.]*)|(\w[\w.]*)\s+as\s+"([^"]+)"|(\w[\w.]*)\s+as\s+(\w[\w.]*)|\(([^)]+)\)\s+as\s+(\w[\w.]*)|(\w[\w.]*))(?:\s*(<<[^>]+>>))?(?:\s*(#[a-zA-Z0-9]+))?\s*$/i;
 		const m = line.match(re);
 		if (m === null) return false;
 
@@ -388,13 +393,17 @@ class UsecaseParser {
 			code = m[4];
 			displayName = m[5];
 		} else if (m[6] && m[7]) {
-			// (Display Name) as Code
+			// DisplayName as Code (both unquoted)
 			displayName = m[6];
 			code = m[7];
-		} else if (m[4]) {
+		} else if (m[8] && m[9]) {
+			// (Display Name) as Code
+			displayName = m[8];
+			code = m[9];
+		} else if (m[10]) {
 			// Code alone
-			code = m[4];
-			displayName = m[4];
+			code = m[10];
+			displayName = m[10];
 		} else {
 			return false;
 		}
@@ -402,16 +411,16 @@ class UsecaseParser {
 		const element = new UsecaseElement(code, displayName, type);
 
 		// Parse stereotype
-		if (m[8]) {
-			const stereoMatch = m[8].match(/<<([^>]+)>>/);
+		if (m[11]) {
+			const stereoMatch = m[11].match(/<<([^>]+)>>/);
 			if (stereoMatch) {
 				element.stereotypes.push(stereoMatch[1]);
 			}
 		}
 
 		// Parse color
-		if (m[9]) {
-			element.color = m[9];
+		if (m[12]) {
+			element.color = m[12];
 		}
 
 		// Assign to current container

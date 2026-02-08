@@ -22,7 +22,7 @@ Usecase diagrams are handled by PlantUML's **Description Diagram** infrastructur
 |---|---|---|
 | `actor` | `shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;` | Stick figure, label below |
 | `actor/` | Same as actor | Business actor (visual distinction deferred) |
-| `usecase` / `(Name)` | `ellipse=1;whiteSpace=wrap;html=1;` | Ellipse, label centered |
+| `usecase` / `(Name)` | `shape=ellipse;whiteSpace=wrap;html=1;` | Ellipse, label centered |
 | `usecase/` / `(Name)/` | Same as usecase | Business usecase (visual distinction deferred) |
 | `package` | `shape=folder;tabWidth=80;tabHeight=20;container=1;collapsible=0;` | Folder tab style |
 | `rectangle` | `rounded=0;container=1;collapsible=0;` | Plain rectangle |

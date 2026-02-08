@@ -37,7 +37,7 @@ export function extractFromDrawioXml(xmlText) {
 	// Find usecase cells (ellipse, but not notes)
 	const usecaseCells = cells.filter(c =>
 		c.vertex && c.style &&
-		c.style.includes('ellipse=1') &&
+		(c.style.includes('shape=ellipse') || c.style.includes('ellipse=1')) &&
 		!c.style.includes('shape=note')
 	);
 	for (const cell of usecaseCells) {

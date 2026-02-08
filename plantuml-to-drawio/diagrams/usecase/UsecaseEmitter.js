@@ -64,7 +64,7 @@ function actorStyle(element) {
 
 function usecaseStyle(element) {
 	const style = {
-		ellipse: 1,
+		shape: 'ellipse',
 		whiteSpace: 'wrap',
 		html: 1,
 		align: 'center',
