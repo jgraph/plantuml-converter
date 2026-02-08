@@ -292,18 +292,24 @@ class SequenceDiagram {
 	}
 
 	getOrderedParticipants() {
-		// Respect explicit ordering if set, otherwise use declaration order
+		// Respect explicit ordering if set, otherwise use declaration order.
+		// Participants without an explicit order keep their declaration index.
+		// Participants with an explicit order are placed at their specified position.
 		const ordered = this.participantOrder.map(code => this.participants.get(code));
 
-		const withOrder = ordered.filter(p => p.order !== null);
-		const withoutOrder = ordered.filter(p => p.order === null);
-
-		if (withOrder.length > 0) {
-			withOrder.sort((a, b) => a.order - b.order);
-			return [...withOrder, ...withoutOrder];
+		const hasAnyOrder = ordered.some(p => p.order !== null);
+		if (hasAnyOrder === false) {
+			return ordered;
 		}
 
-		return ordered;
+		// Assign implicit order to unordered participants based on declaration
+		// index, leaving gaps so explicitly ordered ones can slot in.
+		const result = ordered.map((p, i) => ({
+			participant: p,
+			sortKey: p.order !== null ? p.order : i
+		}));
+		result.sort((a, b) => a.sortKey - b.sortKey);
+		return result.map(r => r.participant);
 	}
 }
 

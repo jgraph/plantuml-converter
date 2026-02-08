@@ -66,6 +66,7 @@ const LAYOUT = {
 	REF_HEIGHT: 30,
 	MARGIN_LEFT: 40,           // Left margin of entire diagram
 	MARGIN_TOP: 20,            // Top margin
+	TITLE_HEIGHT: 30,          // Height reserved for diagram title
 	EXO_ARROW_LENGTH: 60,     // Length of exo arrows from boundary
 	SELF_MESSAGE_WIDTH: 30,   // Width of self-message loop
 	SELF_MESSAGE_HEIGHT: 20,  // Height of self-message loop
@@ -128,15 +129,17 @@ const STYLES = {
 		html: 1,
 		fillColor: '#dae8fc',
 		strokeColor: '#6c8ebf',
-		size: 15
+		size: 8
 	}),
 
 	queue: buildStyle({
-		shape: 'mxgraph.flowchart.delay',
+		shape: 'cylinder3',
 		whiteSpace: 'wrap',
 		html: 1,
 		fillColor: '#dae8fc',
-		strokeColor: '#6c8ebf'
+		strokeColor: '#6c8ebf',
+		size: 8,
+		direction: 'south'
 	}),
 
 	collections: buildStyle({
@@ -144,7 +147,8 @@ const STYLES = {
 		whiteSpace: 'wrap',
 		html: 1,
 		fillColor: '#dae8fc',
-		strokeColor: '#6c8ebf'
+		strokeColor: '#6c8ebf',
+		size: 4
 	}),
 
 	lifeline: buildStyle({
@@ -275,13 +279,29 @@ const STYLES = {
 		verticalAlign: 'top',
 		align: 'left',
 		spacingTop: 2,
-		spacingLeft: 5
+		spacingLeft: 5,
+		fontStyle: 1,
+		fontSize: 12
 	}),
 
 	destroy: buildStyle({
 		shape: 'mxgraph.basic.x',
 		fillColor: '#FF0000',
 		strokeColor: '#FF0000'
+	}),
+
+	title: buildStyle({
+		text: 1,
+		html: 1,
+		align: 'center',
+		verticalAlign: 'middle',
+		resizable: 0,
+		points: '[]',
+		autosize: 1,
+		strokeColor: 'none',
+		fillColor: 'none',
+		fontStyle: 1,
+		fontSize: 14
 	})
 };
 
@@ -296,6 +316,7 @@ export class SequenceEmitter {
 		// Layout state
 		this.participantPositions = new Map(); // code → { x, centerX }
 		this.currentY = LAYOUT.MARGIN_TOP;
+		this.headerStartY = LAYOUT.MARGIN_TOP; // Y where participant headers begin
 		this.diagramWidth = 0;
 		this.diagramHeight = 0;
 
@@ -331,44 +352,55 @@ export class SequenceEmitter {
 	emit(parentId) {
 		this.parentId = parentId || '1';
 
-		// 1. Calculate participant positions
+		// 1. If the diagram has a title, reserve space for it
+		if (this.diagram.title) {
+			this.currentY += LAYOUT.TITLE_HEIGHT;
+		}
+		this.headerStartY = this.currentY;
+
+		// 2. Calculate participant positions
 		this._layoutParticipants();
 
-		// 2. Create participant group containers (deferred — sized after layout)
-		//    Groups will be emitted in step 8 after we know the final height.
+		// 3. Create participant group containers (deferred — sized after layout)
+		//    Groups will be emitted in step 9 after we know the final height.
 
-		// 3. Emit participant headers
+		// 4. Emit diagram title (if present)
+		if (this.diagram.title) {
+			this._emitTitle();
+		}
+
+		// 5. Emit participant headers
 		this._emitParticipantHeaders();
 
 		// Start below participant headers
 		this.currentY += LAYOUT.PARTICIPANT_HEIGHT + LAYOUT.LIFELINE_TOP_MARGIN;
 		const lifelineStartY = this.currentY;
 
-		// 4. Process elements in order
+		// 6. Process elements in order
 		this._emitElements(this.diagram.elements);
 
-		// 5. Add some bottom margin
+		// 7. Add some bottom margin
 		this.currentY += LAYOUT.ROW_HEIGHT;
 
-		// 6. Emit lifelines (from header bottom to current Y)
+		// 8. Emit lifelines (from header bottom to current Y)
 		this._emitLifelines(lifelineStartY, this.currentY);
 
-		// 7. Close any remaining activations
+		// 9. Close any remaining activations
 		this._closeAllActivations();
 
-		// 8. Emit bottom participant boxes (footers)
+		// 10. Emit bottom participant boxes (footers)
 		this._emitParticipantFooters();
 
-		// 9. Update diagram height after footers
+		// 11. Update diagram height after footers
 		this.diagramHeight = this.currentY;
 
-		// 10. Now emit participant group containers with final height
+		// 12. Now emit participant group containers with final height
 		this._emitParticipantGroups();
 
-		// 11. Emit boxes (behind everything else)
+		// 13. Emit boxes (behind everything else)
 		const boxCells = this._emitBoxes();
 
-		// 12. Sort for z-order:
+		// 14. Sort for z-order:
 		//   Layer 0: boxes (background)
 		//   Layer 1: participant group containers (must precede their children)
 		//   Layer 2: lifelines (dashed vertical lines, inside groups)
@@ -414,11 +446,37 @@ export class SequenceEmitter {
 		this.diagramWidth = x - LAYOUT.PARTICIPANT_GAP + LAYOUT.MARGIN_LEFT;
 	}
 
+	// ── Title ────────────────────────────────────────────────────────────
+
+	_emitTitle() {
+		const id = this.nextId();
+		// Center the title across the full diagram width
+		const titleWidth = Math.max(this.diagramWidth, 200);
+
+		this.cells.push(buildCell({
+			id: id,
+			value: this.diagram.title,
+			style: STYLES.title,
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(0, LAYOUT.MARGIN_TOP, titleWidth, LAYOUT.TITLE_HEIGHT)
+		}));
+	}
+
 	_participantWidth(p) {
 		if (p.type === ParticipantType.ACTOR) {
 			return LAYOUT.ACTOR_WIDTH;
 		}
 		if (this._isIconShape(p.type)) {
+			return LAYOUT.ICON_SHAPE_WIDTH;
+		}
+		if (p.type === ParticipantType.DATABASE) {
+			return 40;
+		}
+		if (p.type === ParticipantType.QUEUE) {
+			return 60;
+		}
+		if (p.type === ParticipantType.COLLECTIONS) {
 			return LAYOUT.ICON_SHAPE_WIDTH;
 		}
 		// Estimate width from display name length
@@ -431,6 +489,15 @@ export class SequenceEmitter {
 			return LAYOUT.ACTOR_HEIGHT;
 		}
 		if (this._isIconShape(p.type)) {
+			return LAYOUT.ICON_SHAPE_HEIGHT;
+		}
+		if (p.type === ParticipantType.DATABASE) {
+			return 60;
+		}
+		if (p.type === ParticipantType.QUEUE) {
+			return 40;
+		}
+		if (p.type === ParticipantType.COLLECTIONS) {
 			return LAYOUT.ICON_SHAPE_HEIGHT;
 		}
 		return LAYOUT.PARTICIPANT_HEIGHT;
@@ -472,7 +539,7 @@ export class SequenceEmitter {
 				}),
 				vertex: true,
 				parent: this.parentId,
-				geometry: geom(pos.x, LAYOUT.MARGIN_TOP, pos.width, this.diagramHeight - LAYOUT.MARGIN_TOP)
+				geometry: geom(pos.x, this.headerStartY, pos.width, this.diagramHeight - this.headerStartY)
 			}));
 		}
 	}
@@ -485,7 +552,7 @@ export class SequenceEmitter {
 			// the CREATE life event is processed
 			if (p.isCreated) continue;
 
-			this._emitSingleParticipantHeader(code, p, LAYOUT.MARGIN_TOP);
+			this._emitSingleParticipantHeader(code, p, this.headerStartY);
 		}
 	}
 
@@ -513,7 +580,7 @@ export class SequenceEmitter {
 				style: style,
 				vertex: true,
 				parent: groupId || this.parentId,
-				geometry: geom(0, footerY - LAYOUT.MARGIN_TOP, pos.width, height)
+				geometry: geom(0, footerY - this.headerStartY, pos.width, height)
 			}));
 		}
 
@@ -546,7 +613,7 @@ export class SequenceEmitter {
 			style: style,
 			vertex: true,
 			parent: groupId || this.parentId,
-			geometry: geom(0, y - LAYOUT.MARGIN_TOP, pos.width, height)
+			geometry: geom(0, y - this.headerStartY, pos.width, height)
 		}));
 
 		this.participantHeaderIds.set(code, id);
@@ -578,8 +645,8 @@ export class SequenceEmitter {
 				style: STYLES.lifeline,
 				edge: true,
 				parent: groupId || this.parentId,
-				sourcePoint: { x: relX, y: lineStartY - LAYOUT.MARGIN_TOP },
-				targetPoint: { x: relX, y: endY - LAYOUT.MARGIN_TOP }
+				sourcePoint: { x: relX, y: lineStartY - this.headerStartY },
+				targetPoint: { x: relX, y: endY - this.headerStartY }
 			}));
 
 			this.lifelineIds.set(code, id);
@@ -997,7 +1064,7 @@ export class SequenceEmitter {
 			style: style,
 			vertex: true,
 			parent: groupId || this.parentId,
-			geometry: geom(relX, activation.startY - LAYOUT.MARGIN_TOP, LAYOUT.ACTIVATION_WIDTH, Math.max(height, 10))
+			geometry: geom(relX, activation.startY - this.headerStartY, LAYOUT.ACTIVATION_WIDTH, Math.max(height, 10))
 		}));
 	}
 
@@ -1019,7 +1086,7 @@ export class SequenceEmitter {
 			parent: groupId || this.parentId,
 			geometry: geom(
 				pos.width / 2 - size / 2,
-				this.currentY - LAYOUT.MARGIN_TOP,
+				this.currentY - this.headerStartY,
 				size,
 				size
 			)
@@ -1336,6 +1403,8 @@ export class SequenceEmitter {
 
 	_emitBoxes() {
 		const boxCells = [];
+		const BOX_TITLE_HEIGHT = 28; // Space reserved for box title above participants
+		const BOX_PADDING = 10;
 
 		for (const box of this.diagram.boxes) {
 			if (box.participants.length === 0) continue;
@@ -1352,19 +1421,22 @@ export class SequenceEmitter {
 				}
 			}
 
-			const padding = 10;
-			const x = minX - padding;
-			const width = maxX - minX + 2 * padding;
+			const x = minX - BOX_PADDING;
+			const width = maxX - minX + 2 * BOX_PADDING;
+
+			// Box starts above participant headers to leave room for the title label
+			const boxY = this.headerStartY - BOX_TITLE_HEIGHT;
+			const boxHeight = this.diagramHeight - boxY + BOX_PADDING;
 
 			let style = STYLES.box;
 			if (box.color) {
-				// Apply user-specified color with low opacity so
-				// participants inside the box remain visible
+				// Apply user-specified color with fillOpacity so
+				// the background is semi-transparent but text remains fully visible
 				const hexColor = normalizeColor(box.color);
 				style = style.replace(/fillColor=[^;]+/, `fillColor=${hexColor}`);
 				style = style.replace(/dashed=1;/, '');
 				style = style.replace(/dashPattern=[^;]+;/, '');
-				style += 'opacity=20;';
+				style += 'fillOpacity=20;';
 			}
 
 			boxCells.push(buildCell({
@@ -1373,7 +1445,7 @@ export class SequenceEmitter {
 				style: style,
 				vertex: true,
 				parent: this.parentId,
-				geometry: geom(x, LAYOUT.MARGIN_TOP - 15, width, this.diagramHeight - LAYOUT.MARGIN_TOP + 20)
+				geometry: geom(x, boxY, width, boxHeight)
 			}));
 		}
 
