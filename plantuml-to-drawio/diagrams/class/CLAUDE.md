@@ -7,6 +7,28 @@ Same three-stage pipeline as sequence diagrams:
 PlantUML text → ClassParser → ClassDiagram model → ClassEmitter → mxCell XML
 ```
 
+## Swimlane Style (Critical)
+
+Class boxes use draw.io's swimlane style. **`verticalAlign=top` is required** — without it,
+class name headers are invisible in draw.io PNG export.
+
+Full swimlane base style:
+```
+swimlane=1;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;
+horizontal=1;startSize=<dynamic>;horizontalStack=0;resizeParent=1;
+resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;
+```
+
+### Dynamic header height
+
+`startSize` is computed per entity: **26px base + 18px per extra header line**.
+
+Extra lines come from:
+- Type prefix (`<<interface>>`, `<<enumeration>>`, `<<annotation>>`, etc.)
+- Stereotypes (`<<service>>`, `<<controller>>`, etc.)
+
+Multi-line headers use `<br>` (not `\n`) for line breaks since `html=1` is set.
+
 ## Entity Type → draw.io Style Mapping
 
 | PlantUML Type | draw.io Shape | Header Style |
@@ -35,21 +57,56 @@ PlantUML text → ClassParser → ClassDiagram model → ClassEmitter → mxCell
 
 Line styles: `-` = solid, `..` = dashed, `==` = bold (strokeWidth=2)
 
+### Inheritance edge synthesis
+
+`_emitInheritanceEdges()` synthesizes edges from `extends`/`implements` arrays on each
+`ClassEntity`. These are **separate from `diagram.links`** (which come from explicit
+relationship lines like `A --|> B` in PUML).
+
+- Extends: solid line, `endArrow=block;endFill=0` (hollow triangle)
+- Implements: dashed line, `dashed=1;endArrow=block;endFill=0`
+
 ## Member Rendering
 
-Members are child cells of the swimlane container with `stackLayout`.
+Members are child cells of the swimlane container (26px row height).
+
+Member style:
+```
+text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;
+spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;
+points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;
+```
+
 - Visibility: `+` public, `-` private, `#` protected, `~` package
 - Static: `fontStyle=4` (underline)
 - Abstract: `fontStyle=2` (italic)
-- Separators: `line` style cell
+
+### Separators
+
+Separator style (8px height, distinct from member row):
+```
+line=1;strokeWidth=1;fillColor=none;strokeColor=inherit;
+align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;
+rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;
+```
 
 ## Layout
 
-Simple grid layout:
+Simple grid layout — ELK handles real positioning on the draw.io side.
+
+### Constants
+```
+CLASS_WIDTH: 160, CLASS_HEADER_HEIGHT: 26, MEMBER_ROW_HEIGHT: 26,
+SEPARATOR_HEIGHT: 8, H_GAP: 60, V_GAP: 80, MARGIN: 40, COLS_PER_ROW: 4
+```
+
+### Grid algorithm
 - Entities in rows of COLS_PER_ROW (4)
 - Packages as folder shapes containing their entities
 - Notes positioned relative to their target entity
-- ELK layout on the draw.io side handles real positioning
+
+### Emit order
+packages → entities → notes → inheritance edges (`extends`/`implements`) → explicit link edges
 
 ## Known Limitations
 
