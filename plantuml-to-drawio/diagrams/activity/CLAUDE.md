@@ -90,7 +90,8 @@ also use source/target (ELK handles routing on the draw.io side).
 | Stop | `shape=doubleCircle;fillColor=#000000;` |
 | End | `shape=doubleCircle;fillColor=#000000;` |
 | Kill/Detach | `shape=mxgraph.flowchart.terminate;fillColor=#000000;` |
-| Decision diamond | `rhombus;fillColor=#FFFDE7;strokeColor=#FBC02D;` |
+| Decision diamond (if) | `rhombus;fillColor=#FFFDE7;strokeColor=#000000;` |
+| Decision hexagon (switch) | `hexagon;fillColor=#FFFDE7;strokeColor=#000000;` |
 | Merge diamond | Same as decision, smaller |
 | Fork/Join bar | `fillColor=#000000;` (thin rectangle) |
 | Partition | Dashed rectangle container |

@@ -136,6 +136,21 @@ function mergeStyle() {
 	});
 }
 
+function hexagonStyle(color) {
+	// PlantUML uses hexagonal shape for switch/case decision nodes
+	const s = {
+		shape: 'hexagon',
+		perimeter: 'hexagonPerimeter2',
+		size: 0.25,
+		whiteSpace: 'wrap',
+		html: 1,
+		fillColor: '#FFFDE7',
+		strokeColor: '#000000',
+	};
+	if (color) s.fillColor = normalizeColor(color);
+	return buildStyle(s);
+}
+
 function barStyle() {
 	return buildStyle({
 		rounded: 1,
@@ -1210,15 +1225,15 @@ class ActivityEmitter {
 	}
 
 	_emitSwitch(instr) {
-		// Diamond
+		// Hexagon (PlantUML uses hexagonal shape for switch/case)
 		const diamondId = this.nextId();
 		this.cells.push(buildCell({
 			id: diamondId,
 			value: instr.switchCondition || '',
-			style: diamondStyle(instr.color),
+			style: hexagonStyle(instr.color),
 			vertex: true,
 			parent: this.parentId,
-			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE * 1.5, L.DIAMOND_SIZE),
 		}));
 
 		// Merge point
