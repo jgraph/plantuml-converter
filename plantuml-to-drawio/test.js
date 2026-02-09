@@ -2093,7 +2093,7 @@ section('Activity Emitter');
 	const d = parseActivityDiagram('fork\n  :A;\nfork again\n  :B;\nend fork');
 	const cells = emitActivityDiagram(d, 'test-parent');
 	const cellStr = cells.join('\n');
-	assert(cellStr.includes('fillColor=#000000'), 'Fork emit: has black bars');
+	assert(cellStr.includes('fillColor=#444444'), 'Fork emit: has dark gray bars');
 	const vertexCount = (cellStr.match(/vertex="1"/g) || []).length;
 	assert(vertexCount >= 4, 'Fork emit: at least 4 vertices (2 bars + 2 actions)');
 	console.log('  Fork bars emission: OK');

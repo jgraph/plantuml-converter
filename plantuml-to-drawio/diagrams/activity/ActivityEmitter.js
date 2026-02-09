@@ -35,8 +35,8 @@ const L = Object.freeze({
 	ACTION_LINE_HEIGHT:  20,
 	DIAMOND_SIZE:        40,
 	CIRCLE_SIZE:         30,
-	BAR_WIDTH:           80,   // min width for fork/join bars
-	BAR_HEIGHT:           6,
+	BAR_WIDTH:           40,   // min width for fork/join bars
+	BAR_HEIGHT:           4,
 	NOTE_WIDTH:         140,
 	NOTE_MIN_HEIGHT:     40,
 	NOTE_LINE_HEIGHT:    16,
@@ -67,47 +67,61 @@ function actionStyle(color) {
 
 function startStyle() {
 	return buildStyle({
-		ellipse: '',
+		shape: 'ellipse',
 		fillColor: '#000000',
 		strokeColor: '#000000',
 		html: 1,
+		resizable: 0,
 	});
 }
 
-function stopStyle() {
+function stopOuterStyle() {
+	// UML activity final node: outer ring (unfilled circle with border)
 	return buildStyle({
-		shape: 'doubleCircle',
-		fillColor: '#000000',
+		shape: 'ellipse',
+		fillColor: 'none',
 		strokeColor: '#000000',
+		strokeWidth: 2,
 		html: 1,
+		resizable: 0,
 	});
 }
 
-function endStyle() {
+function stopInnerStyle() {
+	// UML activity final node: inner filled circle
 	return buildStyle({
-		shape: 'doubleCircle',
+		shape: 'ellipse',
 		fillColor: '#000000',
 		strokeColor: '#000000',
 		html: 1,
+		resizable: 0,
 	});
+}
+
+function endOuterStyle() {
+	return stopOuterStyle();
+}
+
+function endInnerStyle() {
+	return stopInnerStyle();
 }
 
 function killStyle() {
 	return buildStyle({
-		shape: 'mxgraph.flowchart.terminate',
-		fillColor: '#000000',
-		strokeColor: '#000000',
+		shape: 'ellipse',
+		fillColor: '#FF0000',
+		strokeColor: '#FF0000',
 		html: 1,
 	});
 }
 
 function diamondStyle(color) {
 	const s = {
-		rhombus: '',
+		shape: 'rhombus',
 		whiteSpace: 'wrap',
 		html: 1,
 		fillColor: '#FFFDE7',
-		strokeColor: '#FBC02D',
+		strokeColor: '#000000',
 	};
 	if (color) s.fillColor = normalizeColor(color);
 	return buildStyle(s);
@@ -115,18 +129,20 @@ function diamondStyle(color) {
 
 function mergeStyle() {
 	return buildStyle({
-		rhombus: '',
+		shape: 'rhombus',
 		fillColor: '#FFFDE7',
-		strokeColor: '#FBC02D',
+		strokeColor: '#000000',
 		html: 1,
 	});
 }
 
 function barStyle() {
 	return buildStyle({
-		fillColor: '#000000',
-		strokeColor: '#000000',
+		rounded: 1,
+		fillColor: '#444444',
+		strokeColor: '#444444',
 		html: 1,
+		arcSize: 50,
 	});
 }
 
@@ -170,6 +186,41 @@ function edgeStyle(color, dashed) {
 	};
 	if (color) s.strokeColor = normalizeColor(color);
 	if (dashed) s.dashed = 1;
+	return buildStyle(s);
+}
+
+function loopBackEdgeStyle(exitSide, entrySide) {
+	// exitSide/entrySide: 'left' or 'right'
+	const s = {
+		html: 1,
+		rounded: 1,
+		endArrow: 'block',
+		endFill: 1,
+		edgeStyle: 'orthogonalEdgeStyle',
+		curved: 1,
+	};
+	if (exitSide === 'left') {
+		s.exitX = 0;
+		s.exitY = 0.5;
+		s.exitDx = 0;
+		s.exitDy = 0;
+	} else if (exitSide === 'right') {
+		s.exitX = 1;
+		s.exitY = 0.5;
+		s.exitDx = 0;
+		s.exitDy = 0;
+	}
+	if (entrySide === 'left') {
+		s.entryX = 0;
+		s.entryY = 0.5;
+		s.entryDx = 0;
+		s.entryDy = 0;
+	} else if (entrySide === 'right') {
+		s.entryX = 1;
+		s.entryY = 0.5;
+		s.entryDx = 0;
+		s.entryDy = 0;
+	}
 	return buildStyle(s);
 }
 
@@ -252,9 +303,10 @@ class ActivityEmitter {
 			const size = this._measureInstruction(instr);
 			instr._size = size;
 
-			if (instr.type === InstructionType.ARROW) {
-				// Arrows don't occupy vertical space in layout;
-				// they modify the next edge's style
+			if (instr.type === InstructionType.ARROW ||
+				instr.type === InstructionType.NOTE) {
+				// Arrows and notes don't occupy vertical space in layout;
+				// arrows modify the next edge's style, notes float to the side
 				continue;
 			}
 
@@ -396,6 +448,8 @@ class ActivityEmitter {
 		const h = L.BAR_HEIGHT + L.V_GAP + maxBranchHeight + L.V_GAP + L.BAR_HEIGHT;
 
 		instr._maxBranchHeight = maxBranchHeight;
+		// Bar width: 80% of total branch spread, capped at a reasonable size
+		instr._barWidth = Math.max(L.BAR_WIDTH, totalBranchWidth * 0.7);
 		return { width: w, height: h };
 	}
 
@@ -418,9 +472,18 @@ class ActivityEmitter {
 
 	_placeSequence(instructions, cx, y, availWidth) {
 		let currentY = y;
+		let lastPlacedY = y;
+		let lastPlacedHeight = 0;
 		for (const instr of instructions) {
 			if (instr.type === InstructionType.ARROW) continue;
+			if (instr.type === InstructionType.NOTE) {
+				// Place note beside the last placed instruction
+				this._placeNote(instr, cx, lastPlacedY);
+				continue;
+			}
 			this._placeInstruction(instr, cx, currentY, availWidth);
+			lastPlacedY = currentY;
+			lastPlacedHeight = instr._size.height;
 			currentY += instr._size.height + L.V_GAP;
 		}
 	}
@@ -545,9 +608,12 @@ class ActivityEmitter {
 	}
 
 	_placeForkSplit(instr, cx, y) {
-		// Top bar
-		instr._topBarX = cx - instr._size.width / 2;
+		const barW = instr._barWidth || instr._size.width;
+
+		// Top bar (centered, narrower than full width)
+		instr._topBarX = cx - barW / 2;
 		instr._topBarY = y;
+		instr._barRenderWidth = barW;
 
 		// Branches below top bar
 		const branchY = y + L.BAR_HEIGHT + L.V_GAP;
@@ -561,8 +627,8 @@ class ActivityEmitter {
 			branchX += bw + L.H_GAP;
 		}
 
-		// Bottom bar
-		instr._botBarX = cx - instr._size.width / 2;
+		// Bottom bar (centered, same width as top bar)
+		instr._botBarX = cx - barW / 2;
 		instr._botBarY = y + instr._size.height - L.BAR_HEIGHT;
 	}
 
@@ -637,6 +703,7 @@ class ActivityEmitter {
 	_emitSequence(instructions) {
 		let prevCellId = null;
 		let pendingArrowInstr = null;
+		let prevInstr = null;
 
 		for (const instr of instructions) {
 			if (instr.type === InstructionType.ARROW) {
@@ -649,12 +716,17 @@ class ActivityEmitter {
 			// Connect to previous element
 			if (prevCellId !== null && result.entryId !== null) {
 				const arrowColor = pendingArrowInstr ? pendingArrowInstr.arrowColor : null;
-				const arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
+				let arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
+				// Use exit label from while/repeat loops
+				if (arrowLabel === null && prevInstr && prevInstr._exitLabel) {
+					arrowLabel = prevInstr._exitLabel;
+				}
 				this._emitEdge(prevCellId, result.entryId, arrowLabel, arrowColor);
 			}
 
 			pendingArrowInstr = null;
 			prevCellId = result.exitId;
+			prevInstr = instr;
 		}
 	}
 
@@ -722,29 +794,53 @@ class ActivityEmitter {
 	}
 
 	_emitStop(instr) {
-		const id = this.nextId();
+		// UML final node: outer ring + inner filled circle
+		const outerId = this.nextId();
 		this.cells.push(buildCell({
-			id,
+			id: outerId,
 			value: '',
-			style: stopStyle(),
+			style: stopOuterStyle(),
 			vertex: true,
 			parent: this.parentId,
 			geometry: geom(instr._x, instr._y, L.CIRCLE_SIZE, L.CIRCLE_SIZE),
 		}));
-		return { entryId: id, exitId: id };
+		const innerSize = Math.round(L.CIRCLE_SIZE * 0.53);
+		const innerOffset = Math.round((L.CIRCLE_SIZE - innerSize) / 2);
+		const innerId = this.nextId();
+		this.cells.push(buildCell({
+			id: innerId,
+			value: '',
+			style: stopInnerStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x + innerOffset, instr._y + innerOffset, innerSize, innerSize),
+		}));
+		return { entryId: outerId, exitId: outerId };
 	}
 
 	_emitEnd(instr) {
-		const id = this.nextId();
+		// UML final node: outer ring + inner filled circle
+		const outerId = this.nextId();
 		this.cells.push(buildCell({
-			id,
+			id: outerId,
 			value: '',
-			style: endStyle(),
+			style: endOuterStyle(),
 			vertex: true,
 			parent: this.parentId,
 			geometry: geom(instr._x, instr._y, L.CIRCLE_SIZE, L.CIRCLE_SIZE),
 		}));
-		return { entryId: id, exitId: id };
+		const innerSize = Math.round(L.CIRCLE_SIZE * 0.53);
+		const innerOffset = Math.round((L.CIRCLE_SIZE - innerSize) / 2);
+		const innerId = this.nextId();
+		this.cells.push(buildCell({
+			id: innerId,
+			value: '',
+			style: endInnerStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x + innerOffset, instr._y + innerOffset, innerSize, innerSize),
+		}));
+		return { entryId: outerId, exitId: outerId };
 	}
 
 	_emitKill(instr) {
@@ -961,6 +1057,8 @@ class ActivityEmitter {
 	}
 
 	_emitForkSplit(instr) {
+		const barW = instr._barRenderWidth || instr._size.width;
+
 		// Top bar
 		const topBarId = this.nextId();
 		this.cells.push(buildCell({
@@ -969,7 +1067,7 @@ class ActivityEmitter {
 			style: barStyle(),
 			vertex: true,
 			parent: this.parentId,
-			geometry: geom(instr._topBarX, instr._topBarY, instr._size.width, L.BAR_HEIGHT),
+			geometry: geom(instr._topBarX, instr._topBarY, barW, L.BAR_HEIGHT),
 		}));
 
 		// Bottom bar
@@ -980,7 +1078,7 @@ class ActivityEmitter {
 			style: barStyle(),
 			vertex: true,
 			parent: this.parentId,
-			geometry: geom(instr._botBarX, instr._botBarY, instr._size.width, L.BAR_HEIGHT),
+			geometry: geom(instr._botBarX, instr._botBarY, barW, L.BAR_HEIGHT),
 		}));
 
 		// Emit branches
@@ -1058,6 +1156,7 @@ class ActivityEmitter {
 		let firstId = null;
 		let prevExitId = null;
 		let pendingArrowInstr = null;
+		let prevInstr = null;
 
 		for (const instr of instructions) {
 			if (instr.type === InstructionType.ARROW) {
@@ -1073,12 +1172,17 @@ class ActivityEmitter {
 
 			if (prevExitId !== null && result.entryId !== null) {
 				const arrowColor = pendingArrowInstr ? pendingArrowInstr.arrowColor : null;
-				const arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
+				let arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
+				// Use exit label from while/repeat loops
+				if (arrowLabel === null && prevInstr && prevInstr._exitLabel) {
+					arrowLabel = prevInstr._exitLabel;
+				}
 				this._emitEdge(prevExitId, result.entryId, arrowLabel, arrowColor);
 			}
 
 			pendingArrowInstr = null;
 			prevExitId = result.exitId;
+			prevInstr = instr;
 		}
 
 		return { entryId: firstId, exitId: prevExitId };
@@ -1103,14 +1207,15 @@ class ActivityEmitter {
 
 	/**
 	 * Emit a loop-back edge (for while/repeat).
-	 * Uses sourcePoint/targetPoint with waypoints to route around the body.
+	 * Uses orthogonal routing to go around the body via the left side.
 	 */
 	_emitLoopBack(sourceId, targetId, loopInstr, label) {
 		const id = this.nextId();
+		// Route via left side: exit from left of source, enter from left of target
 		this.cells.push(buildCell({
 			id,
 			value: label || '',
-			style: edgeStyle(null, false),
+			style: loopBackEdgeStyle('left', 'left'),
 			edge: true,
 			source: sourceId,
 			target: targetId,
