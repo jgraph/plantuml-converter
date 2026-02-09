@@ -68,6 +68,9 @@ function stateStyle(el) {
 	};
 	if (el.color) base.fillColor = normalizeColor(el.color);
 	if (el.lineColor) base.strokeColor = normalizeColor(el.lineColor);
+	if (el.lineStyle === 'dashed') base.dashed = 1;
+	if (el.lineStyle === 'bold') base.strokeWidth = 2;
+	if (el.lineStyle === 'dotted') { base.dashed = 1; base.dashPattern = '1 4'; }
 	return base;
 }
 
@@ -84,6 +87,9 @@ function stateWithDescStyle(el) {
 	};
 	if (el.color) base.fillColor = normalizeColor(el.color);
 	if (el.lineColor) base.strokeColor = normalizeColor(el.lineColor);
+	if (el.lineStyle === 'dashed') base.dashed = 1;
+	if (el.lineStyle === 'bold') base.strokeWidth = 2;
+	if (el.lineStyle === 'dotted') { base.dashed = 1; base.dashPattern = '1 4'; }
 	return base;
 }
 
@@ -399,9 +405,9 @@ class StateEmitter {
 	_placeTopLevel(topLevel) {
 		const isLTR = this.diagram.direction === DiagramDirection.LEFT_TO_RIGHT;
 
-		// Build adjacency from top-level transitions to determine layout order
+		// Build adjacency from top-level transitions
 		const topLevelSet = new Set(topLevel);
-		const adj = new Map();
+		const adj = new Map();       // code → [successors]
 		const inDegree = new Map();
 
 		for (const code of topLevel) {
@@ -409,67 +415,111 @@ class StateEmitter {
 			inDegree.set(code, 0);
 		}
 
+		// Build forward edges for layout (deduplicated, skip reverse edges that create cycles)
+		const edgeSet = new Set();
+		const pairSeen = new Set();  // track A-B pair regardless of direction
 		for (const t of this.diagram.transitions) {
-			// Only consider transitions between top-level elements
 			if (topLevelSet.has(t.from) && topLevelSet.has(t.to) && t.from !== t.to) {
-				adj.get(t.from).push(t.to);
-				inDegree.set(t.to, (inDegree.get(t.to) || 0) + 1);
-			}
-		}
-
-		// Topological sort with stable fallback to input order
-		const sorted = [];
-		const visited = new Set();
-		const queue = [];
-
-		// Start with nodes that have no incoming edges (sources)
-		for (const code of topLevel) {
-			if ((inDegree.get(code) || 0) === 0) {
-				queue.push(code);
-			}
-		}
-
-		while (queue.length > 0) {
-			const code = queue.shift();
-			if (visited.has(code)) continue;
-			visited.add(code);
-			sorted.push(code);
-
-			for (const next of (adj.get(code) || [])) {
-				const newDeg = (inDegree.get(next) || 1) - 1;
-				inDegree.set(next, newDeg);
-				if (newDeg <= 0 && visited.has(next) === false) {
-					queue.push(next);
+				const key = t.from + '->' + t.to;
+				const pair = [t.from, t.to].sort().join('~');
+				if (edgeSet.has(key) === false) {
+					// Skip if the reverse edge was already seen (back-edge)
+					if (pairSeen.has(pair)) continue;
+					pairSeen.add(pair);
+					edgeSet.add(key);
+					adj.get(t.from).push(t.to);
+					inDegree.set(t.to, (inDegree.get(t.to) || 0) + 1);
 				}
 			}
 		}
 
-		// Add any remaining (unconnected or cyclic) elements
-		for (const code of topLevel) {
-			if (visited.has(code) === false) {
-				sorted.push(code);
+		// Assign layers via topological sort (Kahn's algorithm)
+		// Only forward edges affect layer assignment; back-edges are ignored
+		const layer = new Map();
+		const deg = new Map();
+		for (const code of topLevel) deg.set(code, inDegree.get(code) || 0);
+
+		const topoQueue = topLevel.filter(c => deg.get(c) === 0);
+		if (topoQueue.length === 0 && topLevel.length > 0) {
+			topoQueue.push(topLevel[0]); // fallback for cyclic
+		}
+
+		const visited = new Set();
+		for (const s of topoQueue) {
+			layer.set(s, 0);
+		}
+
+		while (topoQueue.length > 0) {
+			const code = topoQueue.shift();
+			if (visited.has(code)) continue;
+			visited.add(code);
+			const currentLayer = layer.get(code) || 0;
+
+			for (const next of (adj.get(code) || [])) {
+				if (visited.has(next)) continue; // skip back-edges
+				const nextLayer = Math.max(layer.get(next) || 0, currentLayer + 1);
+				layer.set(next, nextLayer);
+				const newDeg = (deg.get(next) || 1) - 1;
+				deg.set(next, newDeg);
+				if (newDeg <= 0) {
+					topoQueue.push(next);
+				}
 			}
 		}
 
-		// Place along main axis
-		let x = L.MARGIN;
-		let y = L.MARGIN;
+		// Assign unvisited nodes (cycles) to layer 0
+		for (const code of topLevel) {
+			if (layer.has(code) === false) {
+				layer.set(code, 0);
+			}
+		}
 
-		for (const code of sorted) {
-			const size = this.sizeMap.get(code);
-			if (size == null) continue;
+		// Group by layer
+		const maxLayer = Math.max(0, ...layer.values());
+		const layers = [];
+		for (let i = 0; i <= maxLayer; i++) {
+			layers.push([]);
+		}
+		for (const code of topLevel) {
+			layers[layer.get(code)].push(code);
+		}
 
-			this.posMap.set(code, { x, y, w: size.width, h: size.height });
-
-			if (isLTR) {
-				x += size.width + L.H_GAP;
-			} else {
-				y += size.height + L.V_GAP;
+		// Place nodes: layers along main axis, nodes spread in cross axis
+		if (isLTR) {
+			let x = L.MARGIN;
+			for (const layerNodes of layers) {
+				if (layerNodes.length === 0) continue;
+				let y = L.MARGIN;
+				let maxW = 0;
+				for (const code of layerNodes) {
+					const size = this.sizeMap.get(code);
+					if (size == null) continue;
+					this.posMap.set(code, { x, y, w: size.width, h: size.height });
+					y += size.height + L.V_GAP;
+					if (size.width > maxW) maxW = size.width;
+				}
+				x += maxW + L.H_GAP;
+			}
+		} else {
+			// Top-to-bottom: layers are rows, nodes spread horizontally
+			let y = L.MARGIN;
+			for (const layerNodes of layers) {
+				if (layerNodes.length === 0) continue;
+				let x = L.MARGIN;
+				let maxH = 0;
+				for (const code of layerNodes) {
+					const size = this.sizeMap.get(code);
+					if (size == null) continue;
+					this.posMap.set(code, { x, y, w: size.width, h: size.height });
+					x += size.width + L.H_GAP;
+					if (size.height > maxH) maxH = size.height;
+				}
+				y += maxH + L.V_GAP;
 			}
 		}
 
 		// Place children inside composites
-		for (const code of sorted) {
+		for (const code of topLevel) {
 			this._placeChildren(code);
 		}
 	}
@@ -892,7 +942,7 @@ class StateEmitter {
 			if (fromId == null || toId == null) continue;
 
 			const edgeId = this.nextId();
-			const label = t.label ? xmlEscape(t.label) : '';
+			const label = t.label ? xmlEscape(t.label).replace(/\\n/g, '<br>') : '';
 
 			this.cells.push(buildCell({
 				id: edgeId,
