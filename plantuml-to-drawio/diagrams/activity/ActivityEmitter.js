@@ -304,9 +304,11 @@ class ActivityEmitter {
 			instr._size = size;
 
 			if (instr.type === InstructionType.ARROW ||
-				instr.type === InstructionType.NOTE) {
+				instr.type === InstructionType.NOTE ||
+				instr.type === InstructionType.BREAK) {
 				// Arrows and notes don't occupy vertical space in layout;
-				// arrows modify the next edge's style, notes float to the side
+				// arrows modify the next edge's style, notes float to the side.
+				// Break is invisible — it terminates the branch silently.
 				continue;
 			}
 
@@ -328,7 +330,7 @@ class ActivityEmitter {
 			case InstructionType.KILL:
 				return { width: L.CIRCLE_SIZE, height: L.CIRCLE_SIZE };
 			case InstructionType.BREAK:
-				return { width: L.ACTION_WIDTH, height: L.ACTION_HEIGHT };
+				return { width: 0, height: 0 };
 			case InstructionType.IF:
 				return this._measureIf(instr);
 			case InstructionType.WHILE:
@@ -360,44 +362,74 @@ class ActivityEmitter {
 	}
 
 	_measureIf(instr) {
-		// Collect ALL branches: then, elseIfs, else — all are parallel
-		const allBranches = [];
+		// Check for trivial if-then-break (no else): just a diamond, no branches
+		const thenOnlyBreak = instr.elseBranch.length === 0
+			&& instr.elseIfBranches.length === 0
+			&& instr.thenBranch.length > 0
+			&& instr.thenBranch.every(i => i.type === InstructionType.BREAK);
+
+		if (thenOnlyBreak) {
+			instr._thenSize = { width: 0, height: 0 };
+			instr._elseSize = { width: 0, height: 0 };
+			instr._allBranches = [];
+			instr._hasElseIfChain = false;
+			instr._thenOnlyBreak = true;
+			return { width: L.DIAMOND_SIZE, height: L.DIAMOND_SIZE };
+		}
 
 		// Then branch
 		const thenSize = this._measureSequence(instr.thenBranch);
 		instr._thenSize = thenSize;
-		allBranches.push({ size: thenSize, width: Math.max(thenSize.width, L.DIAMOND_SIZE) });
 
 		// ElseIf branches
 		for (const eib of instr.elseIfBranches) {
 			const eibSize = this._measureSequence(eib.instructions);
 			eib._size = eibSize;
-			allBranches.push({ size: eibSize, width: Math.max(eibSize.width, L.DIAMOND_SIZE) });
 		}
 
-		// Else branch (even if empty — it gets a direct edge to merge)
+		// Else branch
 		const elseSize = this._measureSequence(instr.elseBranch);
 		instr._elseSize = elseSize;
-		if (instr.elseBranch.length > 0 || instr.elseIfBranches.length === 0) {
-			allBranches.push({ size: elseSize, width: Math.max(elseSize.width, L.DIAMOND_SIZE) });
+
+		if (instr.elseIfBranches.length === 0) {
+			// Simple if/else: two parallel branches
+			const thenW = Math.max(thenSize.width, L.DIAMOND_SIZE);
+			const elseW = Math.max(elseSize.width, L.DIAMOND_SIZE);
+			const maxBranchH = Math.max(thenSize.height, elseSize.height);
+			const totalW = thenW + L.H_GAP + elseW;
+			const h = L.DIAMOND_SIZE + L.V_GAP + maxBranchH + L.V_GAP + L.DIAMOND_SIZE / 2;
+			instr._allBranches = [
+				{ size: thenSize, width: thenW },
+				{ size: elseSize, width: elseW },
+			];
+			instr._hasElseIfChain = false;
+			return { width: totalW, height: h };
 		}
+
+		// ElseIf chain: each decision has a "yes" branch, chained horizontally
+		// Collect all branch columns: [then, eib1, eib2, ..., else]
+		const columns = [];
+		columns.push({ size: thenSize, width: Math.max(thenSize.width, L.DIAMOND_SIZE) });
+		for (const eib of instr.elseIfBranches) {
+			columns.push({ size: eib._size, width: Math.max(eib._size.width, L.DIAMOND_SIZE) });
+		}
+		columns.push({ size: elseSize, width: Math.max(elseSize.width, L.DIAMOND_SIZE) });
 
 		let totalWidth = 0;
 		let maxBranchHeight = 0;
-		for (const b of allBranches) {
-			totalWidth += b.width;
-			maxBranchHeight = Math.max(maxBranchHeight, b.size.height);
+		for (const col of columns) {
+			totalWidth += col.width;
+			maxBranchHeight = Math.max(maxBranchHeight, col.size.height);
 		}
-		if (allBranches.length > 1) {
-			totalWidth += L.H_GAP * (allBranches.length - 1);
-		}
+		totalWidth += L.H_GAP * (columns.length - 1);
 
-		instr._allBranches = allBranches;
-
-		const w = totalWidth;
+		// Height includes: top diamond + gap + max branch body + gap + merge
+		// ElseIf diamonds are placed at the same Y as the top diamond (horizontally offset)
 		const h = L.DIAMOND_SIZE + L.V_GAP + maxBranchHeight + L.V_GAP + L.DIAMOND_SIZE / 2;
 
-		return { width: w, height: h };
+		instr._allBranches = columns;
+		instr._hasElseIfChain = true;
+		return { width: totalWidth, height: h };
 	}
 
 	_measureWhile(instr) {
@@ -498,6 +530,7 @@ class ActivityEmitter {
 		let noteBottomRight = 0;
 		for (const instr of instructions) {
 			if (instr.type === InstructionType.ARROW) continue;
+			if (instr.type === InstructionType.BREAK) continue;
 			if (instr.type === InstructionType.NOTE) {
 				// Place note beside the last placed instruction, avoiding overlap
 				const instrCx = this._getLaneCx(instr, cx);
@@ -582,37 +615,59 @@ class ActivityEmitter {
 	}
 
 	_placeIf(instr, cx, y) {
-		// Diamond at top center
-		instr._diamondX = cx - L.DIAMOND_SIZE / 2;
-		instr._diamondY = y;
-
-		const branchY = y + L.DIAMOND_SIZE + L.V_GAP;
 		const totalW = instr._size.width;
-		let branchX = cx - totalW / 2;
+		const branchY = y + L.DIAMOND_SIZE + L.V_GAP;
 
-		// Place all branches side-by-side: then, elseIfs, else
-		let branchIdx = 0;
-
-		// Then branch
-		const thenW = instr._allBranches[branchIdx].width;
-		const thenCx = branchX + thenW / 2;
-		this._placeSequence(instr.thenBranch, thenCx, branchY, thenW);
-		branchX += thenW + L.H_GAP;
-		branchIdx++;
-
-		// ElseIf branches
-		for (const eib of instr.elseIfBranches) {
-			const eibW = instr._allBranches[branchIdx].width;
-			const eibCx = branchX + eibW / 2;
-			this._placeSequence(eib.instructions, eibCx, branchY, eibW);
-			branchX += eibW + L.H_GAP;
-			branchIdx++;
+		if (instr._thenOnlyBreak) {
+			// Trivial if-then-break: just a diamond, no branches/merge
+			instr._diamondX = cx - L.DIAMOND_SIZE / 2;
+			instr._diamondY = y;
+			return;
 		}
 
-		// Else branch
-		if (instr.elseBranch.length > 0 || instr.elseIfBranches.length === 0) {
-			const elseW = instr._allBranches[branchIdx].width;
-			const elseCx = branchX + elseW / 2;
+		if (!instr._hasElseIfChain) {
+			// Simple if/else: single diamond at top center, two parallel branches
+			instr._diamondX = cx - L.DIAMOND_SIZE / 2;
+			instr._diamondY = y;
+
+			let branchX = cx - totalW / 2;
+			const thenW = instr._allBranches[0].width;
+			this._placeSequence(instr.thenBranch, branchX + thenW / 2, branchY, thenW);
+			branchX += thenW + L.H_GAP;
+			const elseW = instr._allBranches[1].width;
+			this._placeSequence(instr.elseBranch, branchX + elseW / 2, branchY, elseW);
+		} else {
+			// ElseIf chain: separate diamonds at same Y, spaced above their columns.
+			// Columns: [then, eib1, eib2, ..., else]
+			// Diamonds: main diamond above then, eib1 diamond above eib1, etc.
+			let colX = cx - totalW / 2;
+			let colIdx = 0;
+
+			// Main diamond above the then-branch column
+			const thenW = instr._allBranches[colIdx].width;
+			const thenCx = colX + thenW / 2;
+			instr._diamondX = thenCx - L.DIAMOND_SIZE / 2;
+			instr._diamondY = y;
+			this._placeSequence(instr.thenBranch, thenCx, branchY, thenW);
+			colX += thenW + L.H_GAP;
+			colIdx++;
+
+			// ElseIf diamonds — each above its branch column
+			instr._elseIfDiamonds = [];
+			for (const eib of instr.elseIfBranches) {
+				const eibW = instr._allBranches[colIdx].width;
+				const eibCx = colX + eibW / 2;
+				eib._diamondX = eibCx - L.DIAMOND_SIZE / 2;
+				eib._diamondY = y;
+				this._placeSequence(eib.instructions, eibCx, branchY, eibW);
+				instr._elseIfDiamonds.push({ x: eib._diamondX, y: eib._diamondY, cx: eibCx });
+				colX += eibW + L.H_GAP;
+				colIdx++;
+			}
+
+			// Else branch
+			const elseW = instr._allBranches[colIdx].width;
+			const elseCx = colX + elseW / 2;
 			this._placeSequence(instr.elseBranch, elseCx, branchY, elseW);
 		}
 
@@ -766,6 +821,7 @@ class ActivityEmitter {
 		let lastPlacedY = currentY;
 		for (const instr of instructions) {
 			if (instr.type === InstructionType.ARROW) continue;
+			if (instr.type === InstructionType.BREAK) continue;
 			if (instr.type === InstructionType.NOTE) {
 				const lane = instr.swimlane || defaultLane;
 				const cx = laneCx.get(lane) || laneCx.values().next().value;
@@ -945,20 +1001,21 @@ class ActivityEmitter {
 	}
 
 	_emitBreak(instr) {
-		const id = this.nextId();
-		this.cells.push(buildCell({
-			id,
-			value: 'break',
-			style: breakStyle(),
-			vertex: true,
-			parent: this.parentId,
-			geometry: geom(instr._x, instr._y, L.ACTION_WIDTH, L.ACTION_HEIGHT),
-		}));
-		return { entryId: id, exitId: null }; // break terminates flow
+		// PlantUML does not render break as a visible node.
+		// It terminates the branch silently — the containing if-branch
+		// becomes empty, routing the edge directly to the merge point.
+		return { entryId: null, exitId: null };
 	}
 
 	_emitIf(instr) {
-		// Diamond
+		// Check if this is a trivial if-then with only break (no else).
+		// Break is invisible, so the if-block effectively has no visible branches.
+		// Skip the merge diamond and use the diamond as both entry and exit.
+		const thenOnlyBreak = instr.elseBranch.length === 0
+			&& instr.elseIfBranches.length === 0
+			&& instr.thenBranch.every(i => i.type === InstructionType.BREAK);
+
+		// Main diamond
 		const diamondId = this.nextId();
 		this.cells.push(buildCell({
 			id: diamondId,
@@ -968,6 +1025,11 @@ class ActivityEmitter {
 			parent: this.parentId,
 			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
 		}));
+
+		if (thenOnlyBreak) {
+			// Diamond acts as a simple pass-through — no merge needed
+			return { entryId: diamondId, exitId: diamondId };
+		}
 
 		// Merge point
 		const mergeId = this.nextId();
@@ -980,44 +1042,78 @@ class ActivityEmitter {
 			geometry: geom(instr._mergeX, instr._mergeY, L.DIAMOND_SIZE / 2, L.DIAMOND_SIZE / 2),
 		}));
 
-		// Emit then branch
+		// Emit then branch (goes down from main diamond)
 		const thenResult = this._emitBranch(instr.thenBranch);
 		if (thenResult.entryId) {
 			this._emitEdge(diamondId, thenResult.entryId, instr.thenLabel);
+		} else {
+			this._emitEdge(diamondId, mergeId, instr.thenLabel);
 		}
 		if (thenResult.exitId) {
 			this._emitEdge(thenResult.exitId, mergeId);
 		}
 
-		// Emit elseIf branches — all fan out directly from the diamond
-		// Each elseif has its own condition (e.g. "B?") and label (e.g. "yes")
-		for (const eib of instr.elseIfBranches) {
-			const eibResult = this._emitBranch(eib.instructions);
-			// Build edge label: "[condition] label" or just "condition"
-			let edgeLabel = eib.condition || '';
-			if (eib.label) {
-				edgeLabel += edgeLabel ? '\n' + eib.label : eib.label;
-			}
-			if (eibResult.entryId) {
-				this._emitEdge(diamondId, eibResult.entryId, edgeLabel);
-			}
-			if (eibResult.exitId) {
-				this._emitEdge(eibResult.exitId, mergeId);
-			}
-		}
-
-		// Emit else branch
-		if (instr.elseBranch.length > 0) {
-			const elseResult = this._emitBranch(instr.elseBranch);
-			if (elseResult.entryId) {
-				this._emitEdge(diamondId, elseResult.entryId, instr.elseLabel);
-			}
-			if (elseResult.exitId) {
-				this._emitEdge(elseResult.exitId, mergeId);
+		if (!instr._hasElseIfChain) {
+			// Simple if/else
+			if (instr.elseBranch.length > 0) {
+				const elseResult = this._emitBranch(instr.elseBranch);
+				if (elseResult.entryId) {
+					this._emitEdge(diamondId, elseResult.entryId, instr.elseLabel);
+				}
+				if (elseResult.exitId) {
+					this._emitEdge(elseResult.exitId, mergeId);
+				}
+			} else {
+				this._emitEdge(diamondId, mergeId, instr.elseLabel);
 			}
 		} else {
-			// No else — direct edge from diamond to merge
-			this._emitEdge(diamondId, mergeId, instr.elseLabel);
+			// ElseIf chain: each elseif gets its own diamond.
+			// Main diamond → eib1 diamond → eib2 diamond → ... → else branch
+			let prevDiamondId = diamondId;
+			for (let i = 0; i < instr.elseIfBranches.length; i++) {
+				const eib = instr.elseIfBranches[i];
+				const pos = instr._elseIfDiamonds[i];
+
+				// Create diamond for this elseif
+				const eibDiamondId = this.nextId();
+				this.cells.push(buildCell({
+					id: eibDiamondId,
+					value: eib.condition || '',
+					style: diamondStyle(null),
+					vertex: true,
+					parent: this.parentId,
+					geometry: geom(pos.x, pos.y, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+				}));
+
+				// Previous diamond → this diamond (the "else" path)
+				this._emitEdge(prevDiamondId, eibDiamondId);
+
+				// This diamond → branch body (the "yes" path)
+				const eibResult = this._emitBranch(eib.instructions);
+				if (eibResult.entryId) {
+					this._emitEdge(eibDiamondId, eibResult.entryId, eib.label || 'yes');
+				} else {
+					this._emitEdge(eibDiamondId, mergeId, eib.label || 'yes');
+				}
+				if (eibResult.exitId) {
+					this._emitEdge(eibResult.exitId, mergeId);
+				}
+
+				prevDiamondId = eibDiamondId;
+			}
+
+			// Last diamond → else branch
+			if (instr.elseBranch.length > 0) {
+				const elseResult = this._emitBranch(instr.elseBranch);
+				if (elseResult.entryId) {
+					this._emitEdge(prevDiamondId, elseResult.entryId, instr.elseLabel);
+				}
+				if (elseResult.exitId) {
+					this._emitEdge(elseResult.exitId, mergeId);
+				}
+			} else {
+				this._emitEdge(prevDiamondId, mergeId, instr.elseLabel);
+			}
 		}
 
 		return { entryId: diamondId, exitId: mergeId };
