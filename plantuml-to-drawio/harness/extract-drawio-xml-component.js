@@ -17,7 +17,7 @@ import {
 
 const SHAPE_TYPE_MAP = {
 	'shape=component':                'component',
-	'shape=mxgraph.flowchart.process':'node',
+	'shape=box3d':                    'node',
 	'shape=cloud':                    'cloud',
 	'shape=cylinder3':                'database',
 	'shape=mxgraph.eip.dataStore':    'storage',
@@ -83,7 +83,7 @@ export function extractFromDrawioXml(xmlText) {
 
 		let type = 'package';
 		if (cell.style.includes('shape=cloud')) type = 'cloud';
-		else if (cell.style.includes('shape=mxgraph.flowchart.process')) type = 'node';
+		else if (cell.style.includes('shape=box3d')) type = 'node';
 		else if (cell.style.includes('shape=mxgraph.flowchart.database')) type = 'database';
 		else if (cell.style.includes('shape=component')) type = 'component';
 		else if (cell.style.includes('shape=mxgraph.sysml.package')) type = 'frame';
@@ -204,9 +204,10 @@ function inferRelType(style) {
 function extractNameFromValue(value) {
 	if (!value) return null;
 	let name = unescapeXml(value);
-	// Remove stereotypes
+	// Remove stereotypes (multiple formats: HTML-escaped, literal, guillemet)
 	name = name.replace(/&lt;&lt;[^&]*&gt;&gt;(?:\\n|<br\s*\/?>)/g, '');
 	name = name.replace(/<<[^>]*>>(?:\\n|<br\s*\/?>)/g, '');
+	name = name.replace(/\u00AB[^\u00BB]*\u00BB(?:\\n|<br\s*\/?>)?/g, '');
 	name = name.replace(/\\n/g, '');
 	name = name.replace(/<[^>]*>/g, '');
 	return name.trim() || null;

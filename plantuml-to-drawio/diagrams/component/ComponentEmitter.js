@@ -33,8 +33,8 @@ const LAYOUT = Object.freeze({
 	DEFAULT_HEIGHT:       60,
 	COMPONENT_WIDTH:      120,
 	COMPONENT_HEIGHT:     60,
-	INTERFACE_WIDTH:      20,
-	INTERFACE_HEIGHT:     20,
+	INTERFACE_WIDTH:      30,
+	INTERFACE_HEIGHT:     30,
 	ACTOR_WIDTH:          40,
 	ACTOR_HEIGHT:         80,
 	PORT_WIDTH:           8,
@@ -91,7 +91,8 @@ function elementStyle(element) {
 			break;
 
 		case ElementType.NODE:
-			base.shape = 'mxgraph.flowchart.process';
+			base.shape = 'box3d';
+			base.size = 10;
 			break;
 
 		case ElementType.CLOUD:
@@ -134,6 +135,9 @@ function elementStyle(element) {
 		case ElementType.INTERFACE:
 			base.shape = 'ellipse';
 			base.perimeter = 'ellipsePerimeter';
+			base.verticalLabelPosition = 'bottom';
+			base.verticalAlign = 'top';
+			base.labelBackgroundColor = 'none';
 			break;
 
 		case ElementType.ACTOR:
@@ -258,7 +262,8 @@ function containerStyle(container) {
 			base.shape = 'cloud';
 			break;
 		case ElementType.NODE:
-			base.shape = 'mxgraph.flowchart.process';
+			base.shape = 'box3d';
+			base.size = 10;
 			break;
 		case ElementType.FOLDER:
 			base.shape = 'folder';
@@ -489,7 +494,7 @@ class ComponentEmitter {
 		return sizes;
 	}
 
-	// ── Grid layout ──────────────────────────────────────────────────────
+	// ── Topology-aware layout ────────────────────────────────────────────
 
 	_layoutElements(diagram, elementSizes) {
 		const containeredElements = new Set();
@@ -507,13 +512,13 @@ class ComponentEmitter {
 		let currentY = LAYOUT.MARGIN;
 
 		if (rootElements.length > 0) {
-			currentY = this._layoutGrid(rootElements, elementSizes, LAYOUT.MARGIN, currentY);
+			currentY = this._layoutLayered(rootElements, elementSizes, diagram.links, LAYOUT.MARGIN, currentY);
 			currentY += LAYOUT.V_GAP;
 		}
 
-		for (const container of diagram.containers) {
-			currentY = this._layoutContainer(container, elementSizes, LAYOUT.MARGIN, currentY);
-			currentY += LAYOUT.V_GAP;
+		// Layout containers in a multi-column grid
+		if (diagram.containers.length > 0) {
+			currentY = this._layoutContainerGrid(diagram.containers, elementSizes, LAYOUT.MARGIN, currentY);
 		}
 	}
 
@@ -524,6 +529,129 @@ class ComponentEmitter {
 		for (const sub of container.subContainers) {
 			this._collectContainerElements(sub, set);
 		}
+	}
+
+	/**
+	 * Layered layout using topological ordering of connected elements.
+	 * Connected elements flow top-to-bottom; orphans go in a grid.
+	 */
+	_layoutLayered(elementCodes, elementSizes, links, startX, startY) {
+		const codeSet = new Set(elementCodes);
+
+		// Build adjacency from links among these elements
+		const outEdges = new Map();  // code → [target codes]
+		const inEdges = new Map();   // code → [source codes]
+		for (const code of elementCodes) {
+			outEdges.set(code, []);
+			inEdges.set(code, []);
+		}
+
+		for (const link of links) {
+			if (codeSet.has(link.from) && codeSet.has(link.to) && link.from !== link.to) {
+				outEdges.get(link.from).push(link.to);
+				inEdges.get(link.to).push(link.from);
+			}
+		}
+
+		// Separate connected and orphan elements
+		const connected = [];
+		const orphans = [];
+		for (const code of elementCodes) {
+			if (outEdges.get(code).length > 0 || inEdges.get(code).length > 0) {
+				connected.push(code);
+			} else {
+				orphans.push(code);
+			}
+		}
+
+		// If no connections, fall back to grid
+		if (connected.length === 0) {
+			return this._layoutGrid(elementCodes, elementSizes, startX, startY);
+		}
+
+		// Assign layers via longest-path from sources
+		const layers = this._assignLayers(connected, outEdges, inEdges);
+
+		// Group elements by layer
+		const layerGroups = new Map();
+		for (const [code, layer] of layers) {
+			if (!layerGroups.has(layer)) {
+				layerGroups.set(layer, []);
+			}
+			layerGroups.get(layer).push(code);
+		}
+
+		// Sort layer indices
+		const sortedLayers = Array.from(layerGroups.keys()).sort((a, b) => a - b);
+
+		// Position each layer as a row
+		let y = startY;
+		for (const layerIdx of sortedLayers) {
+			const codes = layerGroups.get(layerIdx);
+			let x = startX;
+			let rowMaxHeight = 0;
+
+			for (const code of codes) {
+				const size = elementSizes.get(code);
+				if (!size) continue;
+
+				this.elementPositions.set(code, {
+					x, y,
+					width: size.width,
+					height: size.height,
+				});
+
+				rowMaxHeight = Math.max(rowMaxHeight, size.height);
+				x += size.width + LAYOUT.H_GAP;
+			}
+
+			y += rowMaxHeight + LAYOUT.V_GAP;
+		}
+
+		// Layout orphans in a grid below the connected elements
+		if (orphans.length > 0) {
+			y = this._layoutGrid(orphans, elementSizes, startX, y);
+		} else {
+			y -= LAYOUT.V_GAP; // remove trailing gap
+		}
+
+		return y;
+	}
+
+	/**
+	 * Assign layer indices via longest-path layering.
+	 * Sources (no incoming edges) get layer 0; each successor gets max(parent layers) + 1.
+	 */
+	_assignLayers(codes, outEdges, inEdges) {
+		const layers = new Map();
+		const codeSet = new Set(codes);
+		const visited = new Set();
+
+		const dfs = (code) => {
+			if (visited.has(code)) return layers.get(code) || 0;
+			visited.add(code);
+
+			const parents = inEdges.get(code).filter(c => codeSet.has(c));
+			if (parents.length === 0) {
+				layers.set(code, 0);
+				return 0;
+			}
+
+			let maxParentLayer = 0;
+			for (const parent of parents) {
+				maxParentLayer = Math.max(maxParentLayer, dfs(parent) + 1);
+			}
+			layers.set(code, maxParentLayer);
+			return maxParentLayer;
+		};
+
+		for (const code of codes) {
+			if (!visited.has(code)) {
+				dfs(code);
+			}
+		}
+
+		return layers;
 	}
 
 	_layoutGrid(elementCodes, elementSizes, startX, startY) {
@@ -556,6 +684,83 @@ class ComponentEmitter {
 		}
 
 		return y + rowMaxHeight;
+	}
+
+	/**
+	 * Layout containers in a multi-column grid (2-3 per row) instead of one-per-row.
+	 */
+	_layoutContainerGrid(containers, elementSizes, startX, startY) {
+		const CONTAINER_COLS = 3;
+		let col = 0;
+		let x = startX;
+		let y = startY;
+		let rowMaxHeight = 0;
+
+		// First pass: compute each container's bounds
+		const tempBounds = [];
+		for (const container of containers) {
+			this._computeContainerSize(container, elementSizes);
+			const bounds = this.containerBounds.get(container.code);
+			tempBounds.push(bounds);
+		}
+
+		// Second pass: arrange in grid
+		for (let i = 0; i < containers.length; i++) {
+			const container = containers[i];
+			const bounds = this.containerBounds.get(container.code);
+			if (!bounds) continue;
+
+			// Reposition this container and its children
+			const dx = x - bounds.x;
+			const dy = y - bounds.y;
+			this._shiftContainer(container, dx, dy);
+
+			rowMaxHeight = Math.max(rowMaxHeight, bounds.height);
+			col++;
+
+			if (col >= CONTAINER_COLS) {
+				col = 0;
+				x = startX;
+				y += rowMaxHeight + LAYOUT.V_GAP;
+				rowMaxHeight = 0;
+			} else {
+				x += bounds.width + LAYOUT.H_GAP;
+			}
+		}
+
+		return y + rowMaxHeight;
+	}
+
+	/**
+	 * Compute container size without final positioning (uses temporary coordinates).
+	 */
+	_computeContainerSize(container, elementSizes) {
+		const startX = 0;
+		const startY = 0;
+		this._layoutContainer(container, elementSizes, startX, startY);
+	}
+
+	/**
+	 * Shift a container and all its children by (dx, dy).
+	 */
+	_shiftContainer(container, dx, dy) {
+		const bounds = this.containerBounds.get(container.code);
+		if (bounds) {
+			bounds.x += dx;
+			bounds.y += dy;
+		}
+
+		for (const code of container.elements) {
+			const pos = this.elementPositions.get(code);
+			if (pos) {
+				pos.x += dx;
+				pos.y += dy;
+			}
+		}
+
+		for (const sub of container.subContainers) {
+			this._shiftContainer(sub, dx, dy);
+		}
 	}
 
 	_layoutContainer(container, elementSizes, startX, startY) {
@@ -615,7 +820,7 @@ class ComponentEmitter {
 
 		let label = xmlEscape(container.name);
 		for (const stereo of container.stereotypes) {
-			label = '&lt;&lt;' + xmlEscape(stereo) + '&gt;&gt;<br>' + label;
+			label = '\u00AB' + xmlEscape(stereo) + '\u00BB<br>' + label;
 		}
 
 		this.cells.push(buildCell({
@@ -643,7 +848,7 @@ class ComponentEmitter {
 
 		let label = '';
 		for (const stereo of element.stereotypes) {
-			label += '&lt;&lt;' + xmlEscape(stereo) + '&gt;&gt;<br>';
+			label += '\u00AB' + xmlEscape(stereo) + '\u00BB<br>';
 		}
 		label += xmlEscape(element.displayName);
 

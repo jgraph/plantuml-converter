@@ -2442,7 +2442,7 @@ section('Component Emitter');
 	d.addElement(new ComponentElement('http', 'HTTP', CompElementType.INTERFACE));
 	const cells = emitComponentDiagram(d, 'parent-1');
 	assert(cells[0].includes('shape=ellipse'), 'Emit interface: shape=ellipse');
-	assert(cells[0].includes('width="20"'), 'Emit interface: width 20');
+	assert(cells[0].includes('width="30"'), 'Emit interface: width 30');
 	console.log('  Interface emission: OK');
 }
 
@@ -2451,7 +2451,7 @@ section('Component Emitter');
 	const d = new ComponentDiagram();
 	d.addElement(new ComponentElement('srv', 'Server', CompElementType.NODE));
 	const cells = emitComponentDiagram(d, 'parent-1');
-	assert(cells[0].includes('mxgraph.flowchart.process'), 'Emit node: shape');
+	assert(cells[0].includes('box3d'), 'Emit node: shape');
 	console.log('  Node emission: OK');
 }
 
@@ -2515,7 +2515,7 @@ section('Component Emitter');
 	el.stereotypes.push('Service');
 	d.addElement(el);
 	const cells = emitComponentDiagram(d, 'parent-1');
-	assert(cells[0].includes('&amp;lt;&amp;lt;Service&amp;gt;&amp;gt;'), 'Stereotype in label: present');
+	assert(cells[0].includes('\u00ABService\u00BB'), 'Stereotype in label: present');
 	console.log('  Stereotype in label: OK');
 }
 
@@ -2590,7 +2590,7 @@ section('Component Pipeline');
 		'aws --> app'
 	);
 	assert(result.diagramType === 'component', 'Deployment: detected');
-	assert(result.xml.includes('mxgraph.flowchart.process'), 'Deployment: node shape');
+	assert(result.xml.includes('box3d'), 'Deployment: node shape');
 	assert(result.xml.includes('shape=cloud'), 'Deployment: cloud shape');
 	assert(result.xml.includes('cylinder3'), 'Deployment: database shape');
 	console.log('  Deployment elements: OK');
