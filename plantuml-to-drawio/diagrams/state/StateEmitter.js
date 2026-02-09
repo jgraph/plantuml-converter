@@ -538,10 +538,23 @@ class StateEmitter {
 
 		if (el.children.length === 0) return;
 
+		// Sort children: initial first, final last, others in original order
+		const sorted = [...el.children].sort((a, b) => {
+			const aEl = this.diagram.elements.get(a);
+			const bEl = this.diagram.elements.get(b);
+			const aType = aEl ? aEl.type : '';
+			const bType = bEl ? bEl.type : '';
+			if (aType === StateType.INITIAL) return -1;
+			if (bType === StateType.INITIAL) return 1;
+			if (aType === StateType.FINAL) return 1;
+			if (bType === StateType.FINAL) return -1;
+			return 0;
+		});
+
 		let cy = pos.y + L.COMPOSITE_HEADER + L.COMPOSITE_PAD;
 		const cx = pos.x + L.COMPOSITE_PAD;
 
-		for (const childCode of el.children) {
+		for (const childCode of sorted) {
 			const childSize = this.sizeMap.get(childCode);
 			if (childSize == null) continue;
 
@@ -873,9 +886,17 @@ class StateEmitter {
 			const lineCount = note.text.split('\n').length;
 			const noteH = Math.max(L.NOTE_MIN_HEIGHT, lineCount * L.NOTE_LINE_HEIGHT + 16);
 
-			// Position note near its entity
-			let noteX = L.MARGIN;
-			let noteY = L.MARGIN;
+			// Position note near its entity or at a sensible default
+			let noteX = 0;
+			let noteY = 0;
+
+			// Default: find rightmost element to place floating notes beside
+			let maxRight = L.MARGIN + L.NOTE_WIDTH;
+			let maxBottom = L.MARGIN;
+			for (const [, p] of this.posMap) {
+				if (p.x + p.w > maxRight) maxRight = p.x + p.w;
+				if (p.y + p.h > maxBottom) maxBottom = p.y + p.h;
+			}
 
 			if (note.entityCode && this.posMap.has(note.entityCode)) {
 				const entityPos = this.posMap.get(note.entityCode);
@@ -898,17 +919,27 @@ class StateEmitter {
 						break;
 				}
 			} else if (note.isOnLink && note.linkIndex != null) {
-				// Position near the midpoint of the linked transition
+				// Position near the midpoint of the linked transition, offset right
 				const transitions = this.diagram.transitions;
 				if (note.linkIndex < transitions.length) {
 					const t = transitions[note.linkIndex];
 					const fromPos = this.posMap.get(t.from);
 					const toPos = this.posMap.get(t.to);
 					if (fromPos && toPos) {
-						noteX = (fromPos.x + toPos.x) / 2 + L.H_GAP;
-						noteY = (fromPos.y + toPos.y) / 2;
+						noteX = Math.max(fromPos.x, toPos.x) + L.NOTE_OFFSET;
+						noteY = (fromPos.y + fromPos.h + toPos.y) / 2;
+					} else {
+						noteX = maxRight + L.H_GAP;
+						noteY = L.MARGIN;
 					}
+				} else {
+					noteX = maxRight + L.H_GAP;
+					noteY = L.MARGIN;
 				}
+			} else {
+				// Floating note — place to the right of the diagram
+				noteX = maxRight + L.H_GAP;
+				noteY = L.MARGIN;
 			}
 
 			this.cells.push(buildCell({
