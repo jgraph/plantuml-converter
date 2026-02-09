@@ -31,7 +31,8 @@ export function buildStyle(styleMap) {
     return '';
   }
   return Object.entries(styleMap)
-    .map(([key, value]) => `${key}=${value}`)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => value === null ? key : `${key}=${value}`)
     .join(';') + (Object.keys(styleMap).length > 0 ? ';' : '');
 }
 

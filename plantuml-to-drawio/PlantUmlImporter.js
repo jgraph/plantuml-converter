@@ -14,11 +14,9 @@
  *   - Class diagrams
  *   - Component / Deployment diagrams
  *   - Usecase diagrams
+ *   - State diagrams
  *   - Activity diagrams
  *   - Sequence diagrams
- *
- * Designed to be extended with additional diagram types (state,
- * etc.) by registering new handler entries.
  */
 
 import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
@@ -31,6 +29,8 @@ import { parseUsecaseDiagram } from './diagrams/usecase/UsecaseParser.js';
 import { emitUsecaseDiagram } from './diagrams/usecase/UsecaseEmitter.js';
 import { parseActivityDiagram } from './diagrams/activity/ActivityParser.js';
 import { emitActivityDiagram } from './diagrams/activity/ActivityEmitter.js';
+import { parseStateDiagram } from './diagrams/state/StateParser.js';
+import { emitStateDiagram } from './diagrams/state/StateEmitter.js';
 import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.js';
 
 // ── Diagram type registry ──────────────────────────────────────────────────
@@ -101,7 +101,16 @@ diagramHandlers.set('component', {
 			if (trimmed.startsWith("'") || /^@/.test(trimmed) || /^skinparam\b/i.test(trimmed)) continue;
 
 			// [bracket] shorthand (strong signal — unique to component diagrams)
-			if (/\[[^\[\]*]+\]/.test(trimmed) && !/^\s*note\b/i.test(trimmed)) score += 2;
+			// Matches: [Name] as a standalone element, e.g. [Browser] --> [WebServer]
+			// Excludes: [*] (state pseudostate), -[style]-> (state arrow styles),
+			// : [guard] (state guard conditions), ##[style] (state line specs),
+			// state keyword lines
+			if (/(?:^|\s)\[[^\[\]*#]+\]/.test(trimmed) &&
+				!/^\s*note\b/i.test(trimmed) &&
+				!/-\[/.test(trimmed) &&
+				!/:\s*\[/.test(trimmed) &&
+				!/##\[/.test(trimmed) &&
+				!/^state\s+/i.test(trimmed)) score += 2;
 
 			// component/interface keyword declarations (not inside a link)
 			if (/^(?:component|interface)\s+/i.test(trimmed)) score += 2;
@@ -156,6 +165,47 @@ diagramHandlers.set('usecase', {
 	},
 	parse: parseUsecaseDiagram,
 	emit: emitUsecaseDiagram
+});
+
+// Register state diagram handler (before activity — state uses --> arrows like activity,
+// but has distinctive [*] pseudostates, state keyword, and <<choice>>/<<fork>> stereotypes)
+diagramHandlers.set('state', {
+	detect(text) {
+		// Explicit @startstate
+		if (/@startstate\b/i.test(text)) return true;
+
+		const lines = text.split('\n');
+		let score = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+
+			// Skip comments and directives
+			if (trimmed.startsWith("'") || /^@/.test(trimmed) || /^skinparam\b/i.test(trimmed)) continue;
+
+			// [*] pseudostate — strong signal, unique to state diagrams
+			if (/\[\*\]/.test(trimmed)) { score += 3; continue; }
+
+			// state keyword with declaration or body
+			if (/^state\s+/i.test(trimmed)) { score += 2; continue; }
+
+			// <<choice>>, <<fork>>, <<join>> stereotypes
+			if (/<<(?:choice|fork|join)>>/i.test(trimmed)) { score += 2; continue; }
+
+			// hide empty description
+			if (/^hide\s+empty\s+description$/i.test(trimmed)) { score += 2; continue; }
+
+			// --> transitions (shared with activity, lower weight)
+			if (/-->/.test(trimmed)) { score++; continue; }
+
+			// Concurrent separators
+			if (/^--+$/.test(trimmed) || /^\|\|+$/.test(trimmed)) { score++; continue; }
+		}
+
+		return score >= 3;
+	},
+	parse: parseStateDiagram,
+	emit: emitStateDiagram
 });
 
 // Register activity diagram handler (before sequence — sequence's heuristic is broad

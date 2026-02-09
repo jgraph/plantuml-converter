@@ -1,0 +1,129 @@
+@startuml
+title State Diagram -- Comprehensive Test
+
+' ── Section 1: Basic State Declarations ──
+state StateA
+state "Long Name State" as LongState
+state AliasState as "Alias Display"
+state StateWithColor #LightBlue
+state StateWithLineColor ##red
+state StateWithBoth #LightGreen ##[dashed]blue
+state StateWithStereo <<MyStereotype>>
+
+' ── Section 2: Start/End Pseudostates ──
+[*] --> StateA
+StateA --> StateB
+StateB --> [*]
+
+' ── Section 3: Transitions with Labels and Directions ──
+StateA --> LongState : simple label
+LongState -left-> AliasState : go left
+AliasState -right-> StateWithColor : go right
+StateWithColor -up-> StateWithStereo : go up
+StateWithStereo -down-> StateB : go down
+StateA ---> StateB : longer arrow
+
+' ── Section 4: Composite/Nested States ──
+state "Composite State" as Composite {
+    [*] --> Inner1
+    Inner1 --> Inner2
+    Inner2 --> [*]
+
+    state "Nested Composite" as Nested {
+        [*] --> Deep1
+        Deep1 --> Deep2
+        Deep2 --> [*]
+    }
+    Inner1 --> Nested
+}
+
+StateB --> Composite
+Composite --> [*]
+
+' ── Section 5: Stereotypes (Pseudostate Shapes) ──
+state choicePoint <<choice>>
+state forkBar <<fork>>
+state joinBar <<join>>
+
+StateA --> choicePoint
+choicePoint --> LongState : [condition1]
+choicePoint --> AliasState : [condition2]
+
+StateA --> forkBar
+forkBar --> StateB
+forkBar --> LongState
+
+joinBar --> StateA
+StateB --> joinBar
+LongState --> joinBar
+
+' ── Section 6: Colors ──
+state ColoredState #Pink
+state BorderedState ##DarkGreen
+state BothColorsState #LightYellow ##[bold]DarkRed
+
+' ── Section 7: Notes ──
+note left of StateA : This is a left note
+note right of StateB
+    Multi-line note
+    on the right side
+end note
+note "Floating note" as N1
+StateA --> StateB
+note on link : Note on a link
+
+' ── Section 8: Concurrent Regions ──
+state ConcurrentState {
+    [*] --> RegionA1
+    RegionA1 --> RegionA2
+    RegionA2 --> [*]
+    --
+    [*] --> RegionB1
+    RegionB1 --> RegionB2
+    RegionB2 --> [*]
+}
+
+' ── Section 9: History States ──
+state HistoryParent {
+    [*] --> ChildA
+    ChildA --> ChildB
+    ChildB --> [*]
+}
+[*] --> HistoryParent
+HistoryParent --> [*]
+HistoryParent[H] --> ChildA
+
+' ── Section 10: Arrow Styles ──
+state ArrowSource
+state ArrowTarget1
+state ArrowTarget2
+state ArrowTarget3
+ArrowSource -[#red]-> ArrowTarget1 : colored
+ArrowSource -[dashed]-> ArrowTarget2 : dashed
+ArrowSource -[bold]-> ArrowTarget3 : bold
+
+' ── Section 11: Direction and Hide Empty ──
+hide empty description
+
+' ── Section 12: State Descriptions ──
+state DescState
+DescState : entry / initialize
+DescState : do / process
+DescState : exit / cleanup
+
+' ── Section 13: Additional Composite ──
+state "System Boundary" as SystemBoundary {
+    state FrameState1
+    state FrameState2
+    FrameState1 --> FrameState2
+}
+
+' ── Section 14: Synchro Bars ──
+state SyncSource1
+state SyncSource2
+state SyncTarget
+SyncSource1 --> ==mysync==
+SyncSource2 --> ==mysync==
+==mysync== --> SyncTarget
+
+@enduml
