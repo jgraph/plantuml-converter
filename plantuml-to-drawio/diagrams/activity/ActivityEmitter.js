@@ -493,11 +493,23 @@ class ActivityEmitter {
 		let currentY = y;
 		let lastPlacedY = y;
 		let lastPlacedHeight = 0;
+		// Track bottom Y of notes on each side to avoid overlap
+		let noteBottomLeft = 0;
+		let noteBottomRight = 0;
 		for (const instr of instructions) {
 			if (instr.type === InstructionType.ARROW) continue;
 			if (instr.type === InstructionType.NOTE) {
-				// Place note beside the last placed instruction
-				this._placeNote(instr, cx, lastPlacedY);
+				// Place note beside the last placed instruction, avoiding overlap
+				const side = instr.notePosition;
+				const noteBottom = side === NotePosition.LEFT ? noteBottomLeft : noteBottomRight;
+				const noteY = Math.max(lastPlacedY, noteBottom);
+				this._placeNote(instr, cx, noteY);
+				const newBottom = noteY + instr._size.height + 4;
+				if (side === NotePosition.LEFT) {
+					noteBottomLeft = newBottom;
+				} else {
+					noteBottomRight = newBottom;
+				}
 				continue;
 			}
 			this._placeInstruction(instr, cx, currentY, availWidth);
