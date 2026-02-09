@@ -809,8 +809,12 @@ class ActivityEmitter {
 			}
 
 			pendingArrowInstr = null;
-			prevCellId = result.exitId;
-			prevInstr = instr;
+			// Only update prev tracking for flow-participating instructions
+			// (notes return null for both entry/exit and shouldn't break the chain)
+			if (result.entryId !== null || result.exitId !== null) {
+				prevCellId = result.exitId;
+				prevInstr = instr;
+			}
 		}
 	}
 
@@ -1272,8 +1276,11 @@ class ActivityEmitter {
 			}
 
 			pendingArrowInstr = null;
-			prevExitId = result.exitId;
-			prevInstr = instr;
+			// Only update prev tracking for flow-participating instructions
+			if (result.entryId !== null || result.exitId !== null) {
+				prevExitId = result.exitId;
+				prevInstr = instr;
+			}
 		}
 
 		return { entryId: firstId, exitId: prevExitId };
