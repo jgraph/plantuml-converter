@@ -183,6 +183,9 @@ function edgeStyle(transition) {
 		html: 1,
 		endArrow: 'block',
 		endFill: 1,
+		rounded: 1,
+		edgeStyle: 'orthogonalEdgeStyle',
+		labelBackgroundColor: '#ffffff',
 	};
 	if (transition.lineStyle === TransitionStyle.DASHED) {
 		s.dashed = 1;
@@ -579,6 +582,35 @@ class StateEmitter {
 					if (size.height > maxH) maxH = size.height;
 				}
 				y += maxH + L.V_GAP;
+			}
+
+			// Center narrow layers under the widest layer
+			let maxLayerWidth = 0;
+			for (const layerNodes of layers) {
+				let w = 0;
+				for (const code of layerNodes) {
+					const size = this.sizeMap.get(code);
+					if (size) w += size.width + L.H_GAP;
+				}
+				if (layerNodes.length > 0) w -= L.H_GAP;
+				if (w > maxLayerWidth) maxLayerWidth = w;
+			}
+
+			for (const layerNodes of layers) {
+				let layerW = 0;
+				for (const code of layerNodes) {
+					const size = this.sizeMap.get(code);
+					if (size) layerW += size.width + L.H_GAP;
+				}
+				if (layerNodes.length > 0) layerW -= L.H_GAP;
+
+				const offset = (maxLayerWidth - layerW) / 2;
+				if (offset > 0) {
+					for (const code of layerNodes) {
+						const pos = this.posMap.get(code);
+						if (pos) pos.x += offset;
+					}
+				}
 			}
 		}
 
