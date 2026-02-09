@@ -155,7 +155,6 @@ function partitionStyle(color) {
 		fontStyle: 1,
 		fillColor: 'none',
 		strokeColor: '#666666',
-		dashed: 1,
 	};
 	if (color) s.fillColor = normalizeColor(color);
 	return buildStyle(s);
@@ -256,6 +255,7 @@ class ActivityEmitter {
 		this.parentId = parentId;
 		this.nextId = createIdGenerator('puml');
 		this.cells = [];
+		this._laneCx = null;  // Map<laneName, centerX> — set during swimlane mode
 	}
 
 	/**
@@ -500,10 +500,11 @@ class ActivityEmitter {
 			if (instr.type === InstructionType.ARROW) continue;
 			if (instr.type === InstructionType.NOTE) {
 				// Place note beside the last placed instruction, avoiding overlap
+				const instrCx = this._getLaneCx(instr, cx);
 				const side = instr.notePosition;
 				const noteBottom = side === NotePosition.LEFT ? noteBottomLeft : noteBottomRight;
 				const noteY = Math.max(lastPlacedY, noteBottom);
-				this._placeNote(instr, cx, noteY);
+				this._placeNote(instr, instrCx, noteY);
 				const newBottom = noteY + instr._size.height + 4;
 				if (side === NotePosition.LEFT) {
 					noteBottomLeft = newBottom;
@@ -512,11 +513,25 @@ class ActivityEmitter {
 				}
 				continue;
 			}
-			this._placeInstruction(instr, cx, currentY, availWidth);
+			// In swimlane mode, override cx with the instruction's lane center
+			const instrCx = this._getLaneCx(instr, cx);
+			this._placeInstruction(instr, instrCx, currentY, availWidth);
 			lastPlacedY = currentY;
 			lastPlacedHeight = instr._size.height;
 			currentY += instr._size.height + L.V_GAP;
 		}
+	}
+
+	/**
+	 * Get the center X for an instruction, respecting swimlane assignment.
+	 * Falls back to the provided default cx.
+	 */
+	_getLaneCx(instr, defaultCx) {
+		if (this._laneCx !== null && instr.swimlane) {
+			const laneCx = this._laneCx.get(instr.swimlane);
+			if (laneCx !== undefined) return laneCx;
+		}
+		return defaultCx;
 	}
 
 	_placeInstruction(instr, cx, y, availWidth) {
@@ -742,6 +757,9 @@ class ActivityEmitter {
 			laneCx.set(name, laneX + laneW / 2);
 			laneX += laneW;
 		}
+
+		// Store lane centers for use in nested placement (branches inside if/while)
+		this._laneCx = laneCx;
 
 		// Place all instructions sequentially, using the lane's center X
 		let currentY = L.MARGIN + L.SWIMLANE_HEADER;
