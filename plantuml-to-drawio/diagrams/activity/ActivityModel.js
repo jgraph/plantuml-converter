@@ -52,6 +52,7 @@ class Instruction {
 		// ── ARROW fields ──
 		this.arrowLabel = null;      // label text
 		this.arrowColor = null;      // '#color'
+		this.arrowDashed = false;    // boolean — dashed/dotted line style
 
 		// ── IF fields ──
 		this.condition = null;       // string — the test expression

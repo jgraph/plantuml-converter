@@ -360,33 +360,42 @@ class ActivityEmitter {
 	}
 
 	_measureIf(instr) {
-		const thenSize = this._measureSequence(instr.thenBranch);
-		const elseSize = this._measureSequence(instr.elseBranch);
+		// Collect ALL branches: then, elseIfs, else — all are parallel
+		const allBranches = [];
 
-		// ElseIf branches add height to the else side
-		let elseIfHeight = 0;
-		let elseIfMaxWidth = 0;
+		// Then branch
+		const thenSize = this._measureSequence(instr.thenBranch);
+		instr._thenSize = thenSize;
+		allBranches.push({ size: thenSize, width: Math.max(thenSize.width, L.DIAMOND_SIZE) });
+
+		// ElseIf branches
 		for (const eib of instr.elseIfBranches) {
 			const eibSize = this._measureSequence(eib.instructions);
 			eib._size = eibSize;
-			elseIfHeight += L.DIAMOND_SIZE + L.V_GAP + eibSize.height + L.V_GAP;
-			elseIfMaxWidth = Math.max(elseIfMaxWidth, eibSize.width);
+			allBranches.push({ size: eibSize, width: Math.max(eibSize.width, L.DIAMOND_SIZE) });
 		}
 
-		const leftWidth = Math.max(thenSize.width, L.DIAMOND_SIZE);
-		const rightWidth = Math.max(elseSize.width, elseIfMaxWidth, L.DIAMOND_SIZE);
-		const branchHeight = Math.max(
-			thenSize.height,
-			elseSize.height + elseIfHeight
-		);
-
-		const w = leftWidth + L.H_GAP + rightWidth;
-		const h = L.DIAMOND_SIZE + L.V_GAP + branchHeight + L.V_GAP + L.DIAMOND_SIZE / 2;
-
-		instr._thenSize = thenSize;
+		// Else branch (even if empty — it gets a direct edge to merge)
+		const elseSize = this._measureSequence(instr.elseBranch);
 		instr._elseSize = elseSize;
-		instr._leftWidth = leftWidth;
-		instr._rightWidth = rightWidth;
+		if (instr.elseBranch.length > 0 || instr.elseIfBranches.length === 0) {
+			allBranches.push({ size: elseSize, width: Math.max(elseSize.width, L.DIAMOND_SIZE) });
+		}
+
+		let totalWidth = 0;
+		let maxBranchHeight = 0;
+		for (const b of allBranches) {
+			totalWidth += b.width;
+			maxBranchHeight = Math.max(maxBranchHeight, b.size.height);
+		}
+		if (allBranches.length > 1) {
+			totalWidth += L.H_GAP * (allBranches.length - 1);
+		}
+
+		instr._allBranches = allBranches;
+
+		const w = totalWidth;
+		const h = L.DIAMOND_SIZE + L.V_GAP + maxBranchHeight + L.V_GAP + L.DIAMOND_SIZE / 2;
 
 		return { width: w, height: h };
 	}
@@ -404,8 +413,18 @@ class ActivityEmitter {
 		const bodySize = this._measureSequence(instr.repeatBody);
 		instr._bodySize = bodySize;
 
+		// If there's a start label (repeat :Label;), measure an extra action
+		let startLabelHeight = 0;
+		if (instr.repeatStartLabel) {
+			const lines = instr.repeatStartLabel.split('\n');
+			const maxLineLen = Math.max(...lines.map(l => l.length));
+			instr._startLabelWidth = Math.max(L.ACTION_WIDTH, maxLineLen * L.ACTION_CHAR_WIDTH + L.ACTION_PADDING);
+			instr._startLabelHeight = Math.max(L.ACTION_HEIGHT, lines.length * L.ACTION_LINE_HEIGHT + 20);
+			startLabelHeight = instr._startLabelHeight + L.V_GAP;
+		}
+
 		const w = Math.max(bodySize.width + L.LOOP_OFFSET * 2, L.DIAMOND_SIZE + L.LOOP_OFFSET * 2);
-		const h = bodySize.height + L.V_GAP + L.DIAMOND_SIZE + L.V_GAP;
+		const h = startLabelHeight + bodySize.height + L.V_GAP + L.DIAMOND_SIZE + L.V_GAP;
 		return { width: w, height: h };
 	}
 
@@ -541,24 +560,33 @@ class ActivityEmitter {
 		instr._diamondY = y;
 
 		const branchY = y + L.DIAMOND_SIZE + L.V_GAP;
+		const totalW = instr._size.width;
+		let branchX = cx - totalW / 2;
 
-		// Then branch to the left
-		const thenCx = cx - L.H_GAP / 2 - instr._leftWidth / 2;
-		this._placeSequence(instr.thenBranch, thenCx, branchY, instr._leftWidth);
+		// Place all branches side-by-side: then, elseIfs, else
+		let branchIdx = 0;
 
-		// Else branch to the right (including elseif)
-		const elseCx = cx + L.H_GAP / 2 + instr._rightWidth / 2;
-		this._placeSequence(instr.elseBranch, elseCx, branchY, instr._rightWidth);
+		// Then branch
+		const thenW = instr._allBranches[branchIdx].width;
+		const thenCx = branchX + thenW / 2;
+		this._placeSequence(instr.thenBranch, thenCx, branchY, thenW);
+		branchX += thenW + L.H_GAP;
+		branchIdx++;
 
-		// ElseIf branches placed below else
-		let eibY = branchY + (instr._elseSize ? instr._elseSize.height : 0);
+		// ElseIf branches
 		for (const eib of instr.elseIfBranches) {
-			if (eibY > branchY) eibY += L.V_GAP;
-			eib._diamondX = elseCx - L.DIAMOND_SIZE / 2;
-			eib._diamondY = eibY;
-			eibY += L.DIAMOND_SIZE + L.V_GAP;
-			this._placeSequence(eib.instructions, elseCx, eibY, instr._rightWidth);
-			eibY += eib._size.height;
+			const eibW = instr._allBranches[branchIdx].width;
+			const eibCx = branchX + eibW / 2;
+			this._placeSequence(eib.instructions, eibCx, branchY, eibW);
+			branchX += eibW + L.H_GAP;
+			branchIdx++;
+		}
+
+		// Else branch
+		if (instr.elseBranch.length > 0 || instr.elseIfBranches.length === 0) {
+			const elseW = instr._allBranches[branchIdx].width;
+			const elseCx = branchX + elseW / 2;
+			this._placeSequence(instr.elseBranch, elseCx, branchY, elseW);
 		}
 
 		// Merge point at bottom center
@@ -577,12 +605,22 @@ class ActivityEmitter {
 	}
 
 	_placeRepeat(instr, cx, y) {
-		// Body at top
-		this._placeSequence(instr.repeatBody, cx, y, instr._bodySize.width);
+		let currentY = y;
+
+		// Start label action (if present)
+		if (instr.repeatStartLabel) {
+			instr._startLabelX = cx - instr._startLabelWidth / 2;
+			instr._startLabelY = currentY;
+			currentY += instr._startLabelHeight + L.V_GAP;
+		}
+
+		// Body
+		this._placeSequence(instr.repeatBody, cx, currentY, instr._bodySize.width);
+		currentY += instr._bodySize.height + L.V_GAP;
 
 		// Diamond below body
 		instr._diamondX = cx - L.DIAMOND_SIZE / 2;
-		instr._diamondY = y + instr._bodySize.height + L.V_GAP;
+		instr._diamondY = currentY;
 	}
 
 	_placeSwitch(instr, cx, y) {
@@ -654,11 +692,8 @@ class ActivityEmitter {
 	_placeSwimlanes(diagram, instructions, totalSize) {
 		// Collect unique swimlane names in order of first appearance
 		const laneOrder = [];
-		const laneInstructions = new Map();
-
 		for (const [name] of diagram.swimlanes) {
 			laneOrder.push(name);
-			laneInstructions.set(name, []);
 		}
 
 		// Also create a "default" lane for unassigned instructions
@@ -666,35 +701,53 @@ class ActivityEmitter {
 		const hasUnassigned = instructions.some(i => i.swimlane === null);
 		if (hasUnassigned) {
 			laneOrder.unshift(defaultLane);
-			laneInstructions.set(defaultLane, []);
 		}
 
-		// Distribute instructions to lanes
+		// Compute lane widths: use max instruction width per lane, or min
+		const laneWidths = new Map();
+		for (const name of laneOrder) {
+			laneWidths.set(name, L.SWIMLANE_MIN_W);
+		}
 		for (const instr of instructions) {
+			if (instr.type === InstructionType.ARROW || instr.type === InstructionType.NOTE) continue;
 			const lane = instr.swimlane || defaultLane;
-			if (laneInstructions.has(lane) === false) {
-				laneInstructions.set(lane, []);
-			}
-			laneInstructions.get(lane).push(instr);
+			const instrW = (instr._size ? instr._size.width : L.ACTION_WIDTH) + L.PARTITION_PAD * 2;
+			const cur = laneWidths.get(lane) || L.SWIMLANE_MIN_W;
+			laneWidths.set(lane, Math.max(cur, instrW));
 		}
 
-		// Measure and place each lane
+		// Assign lane X positions and center X for each lane
+		const laneCx = new Map();
 		let laneX = L.MARGIN;
-		for (const laneName of laneOrder) {
-			const laneInstrs = laneInstructions.get(laneName);
-			const laneSize = this._measureSequence(laneInstrs);
-			const laneW = Math.max(L.SWIMLANE_MIN_W, laneSize.width + L.PARTITION_PAD * 2);
-
-			const def = diagram.swimlanes.get(laneName);
+		for (const name of laneOrder) {
+			const laneW = laneWidths.get(name);
+			const def = diagram.swimlanes.get(name);
 			if (def) {
 				def._x = laneX;
 				def._width = laneW;
 				def._height = totalSize.height + L.SWIMLANE_HEADER + L.MARGIN;
 			}
-
-			const cx = laneX + laneW / 2;
-			this._placeSequence(laneInstrs, cx, L.MARGIN + L.SWIMLANE_HEADER, laneSize.width);
+			laneCx.set(name, laneX + laneW / 2);
 			laneX += laneW;
+		}
+
+		// Place all instructions sequentially, using the lane's center X
+		let currentY = L.MARGIN + L.SWIMLANE_HEADER;
+		let lastPlacedY = currentY;
+		for (const instr of instructions) {
+			if (instr.type === InstructionType.ARROW) continue;
+			if (instr.type === InstructionType.NOTE) {
+				const lane = instr.swimlane || defaultLane;
+				const cx = laneCx.get(lane) || laneCx.values().next().value;
+				this._placeNote(instr, cx, lastPlacedY);
+				continue;
+			}
+
+			const lane = instr.swimlane || defaultLane;
+			const cx = laneCx.get(lane) || laneCx.values().next().value;
+			this._placeInstruction(instr, cx, currentY, laneWidths.get(lane) || L.SWIMLANE_MIN_W);
+			lastPlacedY = currentY;
+			currentY += instr._size.height + L.V_GAP;
 		}
 	}
 
@@ -716,12 +769,13 @@ class ActivityEmitter {
 			// Connect to previous element
 			if (prevCellId !== null && result.entryId !== null) {
 				const arrowColor = pendingArrowInstr ? pendingArrowInstr.arrowColor : null;
+				const arrowDashed = pendingArrowInstr ? pendingArrowInstr.arrowDashed : false;
 				let arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
 				// Use exit label from while/repeat loops
 				if (arrowLabel === null && prevInstr && prevInstr._exitLabel) {
 					arrowLabel = prevInstr._exitLabel;
 				}
-				this._emitEdge(prevCellId, result.entryId, arrowLabel, arrowColor);
+				this._emitEdge(prevCellId, result.entryId, arrowLabel, arrowColor, arrowDashed);
 			}
 
 			pendingArrowInstr = null;
@@ -894,14 +948,28 @@ class ActivityEmitter {
 
 		// Emit then branch
 		const thenResult = this._emitBranch(instr.thenBranch);
-
-		// Connect diamond → then branch
 		if (thenResult.entryId) {
 			this._emitEdge(diamondId, thenResult.entryId, instr.thenLabel);
 		}
-		// Connect then branch → merge
 		if (thenResult.exitId) {
 			this._emitEdge(thenResult.exitId, mergeId);
+		}
+
+		// Emit elseIf branches — all fan out directly from the diamond
+		// Each elseif has its own condition (e.g. "B?") and label (e.g. "yes")
+		for (const eib of instr.elseIfBranches) {
+			const eibResult = this._emitBranch(eib.instructions);
+			// Build edge label: "[condition] label" or just "condition"
+			let edgeLabel = eib.condition || '';
+			if (eib.label) {
+				edgeLabel += edgeLabel ? '\n' + eib.label : eib.label;
+			}
+			if (eibResult.entryId) {
+				this._emitEdge(diamondId, eibResult.entryId, edgeLabel);
+			}
+			if (eibResult.exitId) {
+				this._emitEdge(eibResult.exitId, mergeId);
+			}
 		}
 
 		// Emit else branch
@@ -913,42 +981,9 @@ class ActivityEmitter {
 			if (elseResult.exitId) {
 				this._emitEdge(elseResult.exitId, mergeId);
 			}
-		} else if (instr.elseIfBranches.length === 0) {
-			// No else, no elseif — direct edge from diamond to merge
+		} else {
+			// No else — direct edge from diamond to merge
 			this._emitEdge(diamondId, mergeId, instr.elseLabel);
-		}
-
-		// Emit elseIf branches
-		let prevDiamondId = diamondId;
-		for (const eib of instr.elseIfBranches) {
-			const eibDiamondId = this.nextId();
-			this.cells.push(buildCell({
-				id: eibDiamondId,
-				value: eib.condition || '',
-				style: diamondStyle(),
-				vertex: true,
-				parent: this.parentId,
-				geometry: geom(eib._diamondX, eib._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
-			}));
-
-			// Connect previous diamond → this elseif diamond
-			this._emitEdge(prevDiamondId, eibDiamondId, instr.elseLabel);
-
-			// Emit elseif branch body
-			const eibResult = this._emitBranch(eib.instructions);
-			if (eibResult.entryId) {
-				this._emitEdge(eibDiamondId, eibResult.entryId, eib.label);
-			}
-			if (eibResult.exitId) {
-				this._emitEdge(eibResult.exitId, mergeId);
-			}
-
-			prevDiamondId = eibDiamondId;
-		}
-
-		// If there were elseIfs but no final else, connect last elseif diamond → merge
-		if (instr.elseIfBranches.length > 0 && instr.elseBranch.length === 0) {
-			this._emitEdge(prevDiamondId, mergeId);
 		}
 
 		return { entryId: diamondId, exitId: mergeId };
@@ -989,8 +1024,34 @@ class ActivityEmitter {
 	}
 
 	_emitRepeat(instr) {
-		// Emit body first
+		let topEntryId = null;
+
+		// Emit start label action if present (repeat :Initialize;)
+		let startLabelId = null;
+		if (instr.repeatStartLabel) {
+			startLabelId = this.nextId();
+			this.cells.push(buildCell({
+				id: startLabelId,
+				value: instr.repeatStartLabel,
+				style: actionStyle(null),
+				vertex: true,
+				parent: this.parentId,
+				geometry: geom(instr._startLabelX, instr._startLabelY, instr._startLabelWidth, instr._startLabelHeight),
+			}));
+			topEntryId = startLabelId;
+		}
+
+		// Emit body
 		const bodyResult = this._emitBranch(instr.repeatBody);
+
+		// Connect start label → body
+		if (startLabelId !== null && bodyResult.entryId) {
+			this._emitEdge(startLabelId, bodyResult.entryId);
+		}
+
+		if (topEntryId === null) {
+			topEntryId = bodyResult.entryId;
+		}
 
 		// Diamond at bottom
 		const diamondId = this.nextId();
@@ -1008,15 +1069,14 @@ class ActivityEmitter {
 			this._emitEdge(bodyResult.exitId, diamondId);
 		}
 
-		// Diamond → body (loop back, "yes")
-		if (bodyResult.entryId) {
-			this._emitLoopBack(diamondId, bodyResult.entryId, instr, instr.repeatYesLabel);
-		}
+		// Diamond → loop back to top (loop back, "yes")
+		const loopBackTarget = topEntryId || diamondId;
+		this._emitLoopBack(diamondId, loopBackTarget, instr, instr.repeatYesLabel);
 
-		// Entry is the body top, exit is the diamond (continues to next via "no")
+		// Entry is the top, exit is the diamond (continues to next via "no")
 		instr._exitLabel = instr.repeatNoLabel;
 
-		return { entryId: bodyResult.entryId || diamondId, exitId: diamondId };
+		return { entryId: topEntryId || diamondId, exitId: diamondId };
 	}
 
 	_emitSwitch(instr) {
@@ -1172,12 +1232,13 @@ class ActivityEmitter {
 
 			if (prevExitId !== null && result.entryId !== null) {
 				const arrowColor = pendingArrowInstr ? pendingArrowInstr.arrowColor : null;
+				const arrowDashed = pendingArrowInstr ? pendingArrowInstr.arrowDashed : false;
 				let arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
 				// Use exit label from while/repeat loops
 				if (arrowLabel === null && prevInstr && prevInstr._exitLabel) {
 					arrowLabel = prevInstr._exitLabel;
 				}
-				this._emitEdge(prevExitId, result.entryId, arrowLabel, arrowColor);
+				this._emitEdge(prevExitId, result.entryId, arrowLabel, arrowColor, arrowDashed);
 			}
 
 			pendingArrowInstr = null;
@@ -1191,13 +1252,13 @@ class ActivityEmitter {
 	/**
 	 * Emit a standard directed edge between two cells.
 	 */
-	_emitEdge(sourceId, targetId, label, color) {
+	_emitEdge(sourceId, targetId, label, color, dashed) {
 		if (sourceId === null || targetId === null) return;
 		const id = this.nextId();
 		this.cells.push(buildCell({
 			id,
 			value: label || '',
-			style: edgeStyle(color),
+			style: edgeStyle(color, dashed),
 			edge: true,
 			source: sourceId,
 			target: targetId,

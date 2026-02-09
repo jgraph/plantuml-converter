@@ -439,6 +439,12 @@ class ActivityParser {
 			if (colorMatch) {
 				instr.arrowColor = colorMatch[0];
 			}
+			// Extract line style (dashed, dotted, bold)
+			if (/\bdashed\b/i.test(m[1])) {
+				instr.arrowDashed = true;
+			} else if (/\bdotted\b/i.test(m[1])) {
+				instr.arrowDashed = true;
+			}
 		}
 
 		this.pendingArrow = instr;
