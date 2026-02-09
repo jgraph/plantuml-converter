@@ -1,0 +1,21 @@
+@startuml
+' Interface shorthand
+() "HTTP" as http
+() "REST API" as rest
+() JDBC
+
+' Keyword declarations
+interface "AMQP" as amqp
+circle "gRPC" as grpc
+
+[Web Server] as ws
+[App Logic] as app
+[Database Layer] as dal
+
+ws --> http
+http -- app
+app --> rest
+rest -- dal
+dal --> amqp
+amqp -- [Message Broker]
+@enduml

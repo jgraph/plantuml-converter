@@ -1,0 +1,17 @@
+@startuml
+' Bracket shorthand
+[Component A]
+[Component B] as B
+["Long Component Name"] as LCN
+
+' Keyword declarations
+component "Web Server" as WS
+component AppLogic
+component "Data Layer" as DL
+component Foo as "Display Foo"
+
+' Relationships
+[Component A] --> B
+WS --> AppLogic
+AppLogic --> DL : uses
+@enduml

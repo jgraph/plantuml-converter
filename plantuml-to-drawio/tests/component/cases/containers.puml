@@ -1,0 +1,36 @@
+@startuml
+package "System" {
+	[Component A]
+	[Component B]
+}
+
+node "Server 1" {
+	component "App" as app
+	database "DB" as db
+}
+
+cloud "AWS" {
+	node "ECS Cluster" {
+		[Service 1]
+		[Service 2]
+	}
+	database "RDS" as rds
+}
+
+folder "Configs" {
+	file "app.yml"
+	file "db.yml"
+}
+
+frame "DMZ" {
+	[Firewall]
+}
+
+rectangle "External" {
+	[Payment API]
+}
+
+[Component A] --> app
+app --> db
+[Service 1] --> rds
+@enduml

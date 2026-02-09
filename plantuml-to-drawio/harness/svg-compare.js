@@ -32,6 +32,11 @@ import { extractFromPlantUmlSvg as extractUsecaseFromSvg } from './extract-plant
 import { extractFromDrawioXml as extractUsecaseFromDrawio } from './extract-drawio-xml-usecase.js';
 import { matchDiagrams as matchUsecase, diffDiagrams as diffUsecase, buildReport as buildUsecaseReport } from './normalize-usecase.js';
 
+// ── Component diagram extractors ────────────────────────────────────────
+import { extractFromPlantUmlSvg as extractComponentFromSvg } from './extract-plantuml-svg-component.js';
+import { extractFromDrawioXml as extractComponentFromDrawio } from './extract-drawio-xml-component.js';
+import { matchDiagrams as matchComponent, diffDiagrams as diffComponent, buildReport as buildComponentReport } from './normalize-component.js';
+
 // ── Extractor registry ────────────────────────────────────────────────────
 
 const extractors = {
@@ -55,6 +60,13 @@ const extractors = {
 		match: matchUsecase,
 		diff: diffUsecase,
 		buildReport: buildUsecaseReport,
+	},
+	component: {
+		extractFromSvg: extractComponentFromSvg,
+		extractFromDrawio: extractComponentFromDrawio,
+		match: matchComponent,
+		diff: diffComponent,
+		buildReport: buildComponentReport,
 	},
 };
 
@@ -101,7 +113,7 @@ if (isMain) {
 	const args = process.argv.slice(2);
 
 	if (args.length < 2) {
-		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase]');
+		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase|component]');
 		console.error('');
 		console.error('Compares a PlantUML SVG against a draw.io XML structurally.');
 		console.error('Output: JSON report to stdout.');
@@ -165,6 +177,18 @@ if (isMain) {
 				console.error('── Candidate (draw.io XML) ──');
 				console.error(`  Actors (${cand.actors.length}): ${cand.actors.map(a => a.name).join(', ')}`);
 				console.error(`  Usecases (${cand.usecases.length}): ${cand.usecases.map(u => u.name).join(', ')}`);
+				console.error(`  Containers: ${cand.containers.length}`);
+				console.error(`  Relationships: ${cand.relationships.length}`);
+				console.error(`  Notes: ${cand.notes.length}`);
+			} else if (diagramType === 'component') {
+				console.error('── Reference (PlantUML SVG) ──');
+				console.error(`  Elements (${ref.elements.length}): ${ref.elements.map(e => `${e.name}[${e.type}]`).join(', ')}`);
+				console.error(`  Containers: ${ref.containers.length}`);
+				console.error(`  Relationships: ${ref.relationships.length}`);
+				console.error(`  Notes: ${ref.notes.length}`);
+				console.error('');
+				console.error('── Candidate (draw.io XML) ──');
+				console.error(`  Elements (${cand.elements.length}): ${cand.elements.map(e => `${e.name}[${e.type}]`).join(', ')}`);
 				console.error(`  Containers: ${cand.containers.length}`);
 				console.error(`  Relationships: ${cand.relationships.length}`);
 				console.error(`  Notes: ${cand.notes.length}`);

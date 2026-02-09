@@ -1,8 +1,9 @@
 /**
- * Data model for PlantUML usecase diagrams.
+ * Data model for PlantUML component and deployment diagrams.
  *
- * This intermediate representation captures the parsed structure of a
- * usecase diagram. It is consumed by the emitter to produce mxGraph XML.
+ * Both diagram types use PlantUML's DescriptionDiagram infrastructure.
+ * This model captures components, nodes, interfaces, containers,
+ * relationships, and notes.
  */
 
 // ── Shared enums from the description diagram common module ───────────────
@@ -19,11 +20,11 @@ import {
 
 // ── Model classes ──────────────────────────────────────────────────────────
 
-class UsecaseElement {
+class ComponentElement {
 	constructor(code, displayName, type) {
 		this.code = code;
 		this.displayName = displayName || code;
-		this.type = type || ElementType.USECASE;
+		this.type = type || ElementType.COMPONENT;
 		this.color = null;                 // Background color
 		this.lineColor = null;             // Border/line color
 		this.stereotypes = [];             // Array of stereotype strings
@@ -31,7 +32,7 @@ class UsecaseElement {
 	}
 }
 
-class UsecaseRelationship {
+class ComponentRelationship {
 	constructor(from, to) {
 		this.from = from;                  // Source element code
 		this.to = to;                      // Target element code
@@ -46,7 +47,7 @@ class UsecaseRelationship {
 	}
 }
 
-class UsecaseContainer {
+class ComponentContainer {
 	constructor(name, code, type, parentPath) {
 		this.name = name;
 		this.code = code || name;
@@ -55,11 +56,11 @@ class UsecaseContainer {
 		this.color = null;
 		this.stereotypes = [];
 		this.elements = [];                // Element codes directly in this container
-		this.subContainers = [];           // Nested UsecaseContainer objects
+		this.subContainers = [];           // Nested ComponentContainer objects
 	}
 }
 
-class UsecaseNote {
+class ComponentNote {
 	constructor(position, text) {
 		this.position = position;          // NotePosition enum
 		this.text = text || '';
@@ -71,13 +72,13 @@ class UsecaseNote {
 	}
 }
 
-class UsecaseDiagram {
+class ComponentDiagram {
 	constructor() {
 		this.title = null;
-		this.elements = new Map();         // code → UsecaseElement
-		this.links = [];                   // Ordered UsecaseRelationship array
-		this.containers = [];              // Top-level UsecaseContainer array
-		this.notes = [];                   // Array of UsecaseNote objects
+		this.elements = new Map();         // code → ComponentElement
+		this.links = [];                   // Ordered ComponentRelationship array
+		this.containers = [];              // Top-level ComponentContainer array
+		this.notes = [];                   // Array of ComponentNote objects
 		this.direction = DiagramDirection.TOP_TO_BOTTOM;
 		this.togetherGroups = [];          // Array of arrays of element codes
 	}
@@ -91,7 +92,7 @@ class UsecaseDiagram {
 
 	getOrCreateElement(code, displayName, type) {
 		if (!this.elements.has(code)) {
-			this.addElement(new UsecaseElement(code, displayName || code, type));
+			this.addElement(new ComponentElement(code, displayName || code, type));
 		}
 		return this.elements.get(code);
 	}
@@ -119,9 +120,9 @@ export {
 	CONTAINER_KEYWORD_MAP,
 
 	// Model classes
-	UsecaseElement,
-	UsecaseRelationship,
-	UsecaseContainer,
-	UsecaseNote,
-	UsecaseDiagram,
+	ComponentElement,
+	ComponentRelationship,
+	ComponentContainer,
+	ComponentNote,
+	ComponentDiagram,
 };

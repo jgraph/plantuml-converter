@@ -1,0 +1,11 @@
+@startuml
+component "API Gateway" as gw {
+	portin "HTTP In" as pin
+	portout "Backend Out" as pout
+}
+
+component "Backend" as be
+
+pin --> pout
+pout --> be
+@enduml

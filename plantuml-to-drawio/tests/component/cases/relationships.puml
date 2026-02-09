@@ -1,0 +1,29 @@
+@startuml
+[A] --> [B] : solid arrow
+[A] ..> [C] : dashed arrow
+[A] ==> [D] : bold arrow
+[A] ~~> [E] : dotted arrow
+
+' Direction hints
+[B] -right-> [C]
+[B] -down-> [D]
+[B] -up-> [E]
+[B] -left-> [A]
+
+' Decorators
+[C] --|> [D] : extends
+[C] *-- [E] : composition
+[C] o-- [A] : aggregation
+[D] <|.. [E] : realizes
+
+' Labels on both sides
+[D] "from" --> "to" [E]
+
+' Colored arrows
+[A] -[#red]-> [D]
+[B] -[bold]-> [E]
+[C] -[#blue,dashed]-> [A]
+
+' Long arrows
+[A] ----> [E] : long
+@enduml

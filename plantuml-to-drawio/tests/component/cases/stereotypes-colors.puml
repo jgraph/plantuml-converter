@@ -1,0 +1,10 @@
+@startuml
+component "Auth" as auth <<Service>> #LightBlue
+component "Logger" as log <<Infrastructure>>
+node "Server" as srv <<Production>> #LightGreen
+[Cache] <<Performance>> #Yellow
+database "DB" as db #PaleGreen
+
+auth --> log : logs to
+auth --> db : reads
+@enduml

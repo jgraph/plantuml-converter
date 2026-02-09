@@ -1,0 +1,28 @@
+@startuml
+node "App Server" as app
+cloud "Cloud" as c
+database "PostgreSQL" as db
+storage "S3" as s3
+artifact "app.war" as war
+folder "Logs" as logs
+file "config.yml" as cfg
+frame "Network" as net
+rectangle "Zone" as zone
+agent "Monitor" as mon
+person "Admin" as adm
+hexagon "Router" as rtr
+card "License" as lic
+queue "MQ" as mq
+stack "Stack" as stk
+boundary "Gateway" as gw
+control "LB" as lb
+entity "Cache" as cache
+label "v1.0" as ver
+collections "Services" as svcs
+
+app --> db
+c --> s3
+war --> app : deploys to
+mon --> app : monitors
+adm --> gw : manages
+@enduml

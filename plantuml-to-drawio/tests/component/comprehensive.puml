@@ -1,0 +1,153 @@
+@startuml
+
+title Component & Deployment Diagram — Comprehensive Test
+
+' ── Section 1: Component declarations ──────────────────────────────────
+
+' Bracket shorthand
+[First Component]
+[Another Component] as Comp2
+["Component with Spaces"] as Comp3
+
+' Keyword declarations
+component "Web Server" as WS
+component AppLogic
+component "Data Access" as DA
+
+' ── Section 2: Interface declarations ──────────────────────────────────
+
+' Interface shorthand
+() "HTTP API" as httpApi
+() "REST" as restApi
+
+' Keyword interface
+interface "Database Port" as dbPort
+circle "Event Bus" as evtBus
+
+' ── Section 3: Deployment element declarations ─────────────────────────
+
+node "Application Server" as appSrv
+cloud "AWS Cloud" as aws
+database "PostgreSQL" as db
+storage "S3 Bucket" as s3
+artifact "app.war" as war
+folder "Config Files" as cfg
+file "application.yml" as yml
+frame "DMZ" as dmz
+rectangle "Monitoring" as mon
+agent "Prometheus" as prom
+person "Admin" as admin
+actor "User" as usr
+hexagon "Router" as rtr
+card "License" as lic
+queue "Message Queue" as mq
+stack "Docker Stack" as dstack
+boundary "API Gateway" as apigw
+control "Load Balancer" as lb
+entity "Cache" as cache
+label "v2.1.0" as ver
+collections "Microservices" as ms
+
+' ── Section 4: Stereotypes and colors ──────────────────────────────────
+
+component "Auth Service" as auth <<Service>> #LightBlue
+node "Primary DB" as pdb <<Master>> #LightGreen
+[Logging] <<Infrastructure>> #LightYellow
+
+' ── Section 5: Containers with nesting ─────────────────────────────────
+
+package "Backend Services" {
+	[Service A] as svcA
+	[Service B] as svcB
+}
+
+node "Production Server" {
+	component "App Runtime" as runtime
+	database "Local Cache" as lcache
+}
+
+cloud "Cloud Platform" {
+	node "Cluster 1" as c1 {
+		[Worker 1] as w1
+		[Worker 2] as w2
+	}
+	node "Cluster 2" as c2 {
+		[Worker 3] as w3
+	}
+	database "Shared DB" as sdb
+}
+
+folder "Deployment Artifacts" {
+	artifact "frontend.zip" as fzip
+	artifact "backend.jar" as bjar
+}
+
+frame "Security Zone" {
+	component "Firewall" as fw
+	component "IDS" as ids
+}
+
+rectangle "External Systems" {
+	component "Payment Gateway" as pg
+	component "Email Service" as email
+}
+
+' ── Section 6: Relationships ───────────────────────────────────────────
+
+' Simple arrows
+[First Component] --> [Another Component]
+WS --> AppLogic
+AppLogic --> DA
+
+' Arrow styles
+WS ..> httpApi : implements
+restApi -- AppLogic
+DA ==> db : persists
+
+' Direction hints
+WS -right-> restApi
+DA -down-> db
+lb -up-> WS
+
+' Decorators
+AppLogic --|> auth : extends
+DA *-- lcache : contains
+svcA o-- svcB : aggregates
+WS <|.. httpApi : realizes
+
+' Labels
+svcA --> svcB : "internal call"
+w1 --> sdb : reads/writes
+
+' Colored/styled arrows
+WS -[#red]-> fw : filtered
+DA -[bold]-> db
+
+' ── Section 7: Notes ───────────────────────────────────────────────────
+
+note left of WS : Handles all\nincoming requests
+
+note right of db
+	Primary data store
+	PostgreSQL 15
+end note
+
+note "Floating architecture note" as N1
+
+note on link : Critical path
+
+' ── Section 8: Together groups ─────────────────────────────────────────
+
+together {
+	component "Sidecar A" as scA
+	component "Sidecar B" as scB
+}
+
+' ── Section 9: Ports ───────────────────────────────────────────────────
+
+component "Gateway" as gw {
+	portin "Inbound" as pin
+	portout "Outbound" as pout
+}
+
+@enduml

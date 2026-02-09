@@ -33,6 +33,16 @@ import {
 	InstructionType, NotePosition as ActNotePosition,
 	Instruction, SwimlaneDefinition, ActivityDiagram
 } from './diagrams/activity/ActivityModel.js';
+import { parseComponentDiagram } from './diagrams/component/ComponentParser.js';
+import { emitComponentDiagram } from './diagrams/component/ComponentEmitter.js';
+import {
+	ElementType as CompElementType,
+	RelationDecor as CompRelationDecor,
+	LineStyle as CompLineStyle,
+	Direction as CompDirection,
+	NotePosition as CompNotePosition,
+	ComponentElement, ComponentRelationship, ComponentContainer, ComponentNote, ComponentDiagram
+} from './diagrams/component/ComponentModel.js';
 
 let passed = 0;
 let failed = 0;
@@ -2151,6 +2161,439 @@ stop`);
 	assert(result.xml.includes('True path'), 'If pipeline: has then label');
 	assert(result.xml.includes('False path'), 'If pipeline: has else label');
 	console.log('  If/else conversion: OK');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// COMPONENT / DEPLOYMENT DIAGRAM TESTS
+// ══════════════════════════════════════════════════════════════════════════
+
+section('Component Parser');
+
+{
+	// Bracket shorthand
+	const d = parseComponentDiagram('[Component A]\n[Component B] as B');
+	assert(d.elements.size === 2, 'Bracket shorthand: 2 elements');
+	assert(d.elements.has('ComponentA'), 'Bracket shorthand: ComponentA exists');
+	assert(d.elements.has('B'), 'Bracket shorthand: B alias exists');
+	const compA = d.elements.get('ComponentA');
+	assert(compA.type === CompElementType.COMPONENT, 'Bracket shorthand: type is COMPONENT');
+	assert(compA.displayName === 'Component A', 'Bracket shorthand: display name preserved');
+	console.log('  Bracket shorthand: OK');
+}
+
+{
+	// Quoted bracket shorthand
+	const d = parseComponentDiagram('["Display Name"] as DN');
+	assert(d.elements.size === 1, 'Quoted bracket: 1 element');
+	assert(d.elements.has('DN'), 'Quoted bracket: alias DN');
+	assert(d.elements.get('DN').displayName === 'Display Name', 'Quoted bracket: display name');
+	console.log('  Quoted bracket shorthand: OK');
+}
+
+{
+	// Interface shorthand
+	const d = parseComponentDiagram('() "HTTP API" as http\n() REST');
+	assert(d.elements.size === 2, 'Interface shorthand: 2 elements');
+	assert(d.elements.has('http'), 'Interface shorthand: http alias');
+	assert(d.elements.get('http').type === CompElementType.INTERFACE, 'Interface shorthand: type INTERFACE');
+	assert(d.elements.has('REST'), 'Interface shorthand: REST');
+	assert(d.elements.get('REST').type === CompElementType.INTERFACE, 'Interface shorthand: REST type');
+	console.log('  Interface shorthand: OK');
+}
+
+{
+	// Keyword declarations
+	const d = parseComponentDiagram(
+		'component "Web Server" as WS\n' +
+		'node "App Server" as AS\n' +
+		'cloud "AWS" as aws\n' +
+		'database "DB" as db\n' +
+		'storage "S3" as s3\n' +
+		'artifact "app.war" as war\n' +
+		'folder "Logs" as logs\n' +
+		'file "config.yml" as cfg\n' +
+		'agent "Monitor" as mon\n' +
+		'person "Admin" as adm'
+	);
+	assert(d.elements.size === 10, 'Keyword declarations: 10 elements');
+	assert(d.elements.get('WS').type === CompElementType.COMPONENT, 'Keyword: WS is COMPONENT');
+	assert(d.elements.get('AS').type === CompElementType.NODE, 'Keyword: AS is NODE');
+	assert(d.elements.get('aws').type === CompElementType.CLOUD, 'Keyword: aws is CLOUD');
+	assert(d.elements.get('db').type === CompElementType.DATABASE, 'Keyword: db is DATABASE');
+	assert(d.elements.get('s3').type === CompElementType.STORAGE, 'Keyword: s3 is STORAGE');
+	assert(d.elements.get('war').type === CompElementType.ARTIFACT, 'Keyword: war is ARTIFACT');
+	assert(d.elements.get('logs').type === CompElementType.FOLDER, 'Keyword: logs is FOLDER');
+	assert(d.elements.get('cfg').type === CompElementType.FILE, 'Keyword: cfg is FILE');
+	assert(d.elements.get('mon').type === CompElementType.AGENT, 'Keyword: mon is AGENT');
+	assert(d.elements.get('adm').type === CompElementType.PERSON, 'Keyword: adm is PERSON');
+	console.log('  Keyword declarations: OK');
+}
+
+{
+	// More keyword types
+	const d = parseComponentDiagram(
+		'hexagon "Router" as rtr\n' +
+		'card "License" as lic\n' +
+		'queue "MQ" as mq\n' +
+		'stack "Stack" as stk\n' +
+		'boundary "Gateway" as gw\n' +
+		'control "LB" as lb\n' +
+		'entity "Cache" as cache\n' +
+		'label "v1.0" as ver\n' +
+		'collections "Services" as svcs'
+	);
+	assert(d.elements.get('rtr').type === CompElementType.HEXAGON, 'Keyword: rtr is HEXAGON');
+	assert(d.elements.get('lic').type === CompElementType.CARD, 'Keyword: lic is CARD');
+	assert(d.elements.get('mq').type === CompElementType.QUEUE, 'Keyword: mq is QUEUE');
+	assert(d.elements.get('stk').type === CompElementType.STACK, 'Keyword: stk is STACK');
+	assert(d.elements.get('gw').type === CompElementType.BOUNDARY, 'Keyword: gw is BOUNDARY');
+	assert(d.elements.get('lb').type === CompElementType.CONTROL, 'Keyword: lb is CONTROL');
+	assert(d.elements.get('cache').type === CompElementType.ENTITY_DESC, 'Keyword: cache is ENTITY_DESC');
+	assert(d.elements.get('ver').type === CompElementType.LABEL, 'Keyword: ver is LABEL');
+	assert(d.elements.get('svcs').type === CompElementType.COLLECTIONS, 'Keyword: svcs is COLLECTIONS');
+	console.log('  Extended keyword types: OK');
+}
+
+{
+	// Stereotypes and colors
+	const d = parseComponentDiagram('component "Auth" as auth <<Service>> #LightBlue');
+	const auth = d.elements.get('auth');
+	assert(auth.stereotypes.length === 1, 'Stereotype: has 1');
+	assert(auth.stereotypes[0] === 'Service', 'Stereotype: value is Service');
+	assert(auth.color === '#LightBlue', 'Color: #LightBlue');
+	console.log('  Stereotypes and colors: OK');
+}
+
+{
+	// Container nesting
+	const d = parseComponentDiagram(
+		'node "Server" {\n' +
+		'  component "App" as app\n' +
+		'  database "DB" as db\n' +
+		'}'
+	);
+	assert(d.containers.length === 1, 'Container: 1 top-level');
+	assert(d.containers[0].type === CompElementType.NODE, 'Container: type is NODE');
+	assert(d.containers[0].elements.length === 2, 'Container: 2 elements');
+	assert(d.containers[0].elements.includes('app'), 'Container: has app');
+	assert(d.containers[0].elements.includes('db'), 'Container: has db');
+	assert(d.elements.get('app').containerPath === 'Server', 'Container: app containerPath');
+	console.log('  Container nesting: OK');
+}
+
+{
+	// Nested containers
+	const d = parseComponentDiagram(
+		'cloud "AWS" {\n' +
+		'  node "Cluster" {\n' +
+		'    [Worker]\n' +
+		'  }\n' +
+		'  database "RDS" as rds\n' +
+		'}'
+	);
+	assert(d.containers.length === 1, 'Nested containers: 1 top-level');
+	assert(d.containers[0].subContainers.length === 1, 'Nested containers: 1 sub');
+	assert(d.containers[0].subContainers[0].type === CompElementType.NODE, 'Nested containers: sub is NODE');
+	assert(d.containers[0].subContainers[0].elements.includes('Worker'), 'Nested containers: Worker in sub');
+	assert(d.containers[0].elements.includes('rds'), 'Nested containers: rds in cloud');
+	console.log('  Nested containers: OK');
+}
+
+{
+	// Link parsing
+	const d = parseComponentDiagram('[A] --> [B] : uses\n[A] ..> [C]\n[A] ==> [D]');
+	assert(d.links.length === 3, 'Links: 3 links');
+	assert(d.links[0].rightDecor === CompRelationDecor.ARROW, 'Link 0: right arrow');
+	assert(d.links[0].lineStyle === CompLineStyle.SOLID, 'Link 0: solid');
+	assert(d.links[0].label === 'uses', 'Link 0: label');
+	assert(d.links[1].lineStyle === CompLineStyle.DASHED, 'Link 1: dashed');
+	assert(d.links[2].lineStyle === CompLineStyle.BOLD, 'Link 2: bold');
+	console.log('  Link parsing: OK');
+}
+
+{
+	// Link decorators
+	const d = parseComponentDiagram('[A] --|> [B]\n[A] *-- [C]\n[A] o-- [D]\n[A] <|.. [E]');
+	assert(d.links[0].rightDecor === CompRelationDecor.EXTENDS, 'Decor: --|> extends');
+	assert(d.links[1].leftDecor === CompRelationDecor.COMPOSITION, 'Decor: *-- composition');
+	assert(d.links[2].leftDecor === CompRelationDecor.AGGREGATION, 'Decor: o-- aggregation');
+	assert(d.links[3].leftDecor === CompRelationDecor.EXTENDS, 'Decor: <|.. extends');
+	assert(d.links[3].lineStyle === CompLineStyle.DASHED, 'Decor: <|.. dashed');
+	console.log('  Link decorators: OK');
+}
+
+{
+	// Direction hints
+	const d = parseComponentDiagram('[A] -right-> [B]\n[A] -down-> [C]\n[A] -up-> [D]');
+	assert(d.links[0].direction === CompDirection.RIGHT, 'Direction: right');
+	assert(d.links[1].direction === CompDirection.DOWN, 'Direction: down');
+	assert(d.links[2].direction === CompDirection.UP, 'Direction: up');
+	console.log('  Direction hints: OK');
+}
+
+{
+	// Auto-creation from links
+	const d = parseComponentDiagram('[A] --> [B]');
+	assert(d.elements.size === 2, 'Auto-create: 2 elements');
+	assert(d.elements.get('A').type === CompElementType.COMPONENT, 'Auto-create: A is COMPONENT');
+	assert(d.elements.get('B').type === CompElementType.COMPONENT, 'Auto-create: B is COMPONENT');
+	console.log('  Auto-creation from links: OK');
+}
+
+{
+	// Notes
+	const d = parseComponentDiagram('[A] as A\nnote left of A : This is A');
+	assert(d.notes.length === 1, 'Notes: 1 note');
+	assert(d.notes[0].entityCode === 'A', 'Notes: attached to A');
+	assert(d.notes[0].text === 'This is A', 'Notes: text');
+	assert(d.notes[0].position === CompNotePosition.LEFT, 'Notes: position left');
+	console.log('  Notes: OK');
+}
+
+{
+	// Floating notes
+	const d = parseComponentDiagram('note "Floating note" as N1');
+	assert(d.notes.length === 1, 'Floating note: 1 note');
+	assert(d.notes[0].alias === 'N1', 'Floating note: alias N1');
+	assert(d.notes[0].text === 'Floating note', 'Floating note: text');
+	console.log('  Floating note: OK');
+}
+
+{
+	// Note on link
+	const d = parseComponentDiagram('[A] --> [B]\nnote on link : Critical');
+	assert(d.notes.length === 1, 'Note on link: 1 note');
+	assert(d.notes[0].isOnLink === true, 'Note on link: isOnLink');
+	assert(d.notes[0].linkIndex === 0, 'Note on link: linkIndex 0');
+	console.log('  Note on link: OK');
+}
+
+{
+	// Multi-line note
+	const d = parseComponentDiagram('[A] as A\nnote right of A\n  Line 1\n  Line 2\nend note');
+	assert(d.notes.length === 1, 'Multiline note: 1 note');
+	assert(d.notes[0].text.includes('Line 1'), 'Multiline note: has Line 1');
+	assert(d.notes[0].text.includes('Line 2'), 'Multiline note: has Line 2');
+	console.log('  Multi-line note: OK');
+}
+
+{
+	// Together groups
+	const d = parseComponentDiagram('together {\n  component "A" as A\n  component "B" as B\n}');
+	assert(d.togetherGroups.length === 1, 'Together: 1 group');
+	assert(d.togetherGroups[0].length === 2, 'Together: 2 elements');
+	console.log('  Together groups: OK');
+}
+
+{
+	// Interface and component in links
+	const d = parseComponentDiagram('() "HTTP" as http\n[Server] --> http');
+	assert(d.elements.get('http').type === CompElementType.INTERFACE, 'Link resolve: http is INTERFACE');
+	assert(d.elements.get('Server').type === CompElementType.COMPONENT, 'Link resolve: Server is COMPONENT');
+	console.log('  Interface in links: OK');
+}
+
+{
+	// Keyword alias forms: Code as "Display"
+	const d = parseComponentDiagram('component Foo as "Display Foo"');
+	assert(d.elements.has('Foo'), 'Alias form: Foo code');
+	assert(d.elements.get('Foo').displayName === 'Display Foo', 'Alias form: Display Foo');
+	console.log('  Code as Display alias: OK');
+}
+
+{
+	// Port declarations inside container
+	const d = parseComponentDiagram(
+		'component "GW" as gw {\n' +
+		'  portin "In" as pin\n' +
+		'  portout "Out" as pout\n' +
+		'}'
+	);
+	assert(d.elements.get('pin').type === CompElementType.PORTIN, 'Ports: pin is PORTIN');
+	assert(d.elements.get('pout').type === CompElementType.PORTOUT, 'Ports: pout is PORTOUT');
+	assert(d.containers[0].elements.includes('pin'), 'Ports: pin in container');
+	console.log('  Port declarations: OK');
+}
+
+{
+	// Colored/styled arrows
+	const d = parseComponentDiagram('[A] -[#red]-> [B]\n[A] -[bold]-> [C]');
+	assert(d.links[0].color === '#red', 'Styled arrow: color red');
+	assert(d.links[1].lineStyle === CompLineStyle.BOLD, 'Styled arrow: bold');
+	console.log('  Colored/styled arrows: OK');
+}
+
+section('Component Emitter');
+
+{
+	// Component shape emission
+	const d = new ComponentDiagram();
+	d.addElement(new ComponentElement('A', 'Component A', CompElementType.COMPONENT));
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells.length >= 1, 'Emit component: at least 1 cell');
+	assert(cells[0].includes('shape=component'), 'Emit component: shape=component');
+	assert(cells[0].includes('Component A'), 'Emit component: label');
+	console.log('  Component emission: OK');
+}
+
+{
+	// Interface shape emission (small circle)
+	const d = new ComponentDiagram();
+	d.addElement(new ComponentElement('http', 'HTTP', CompElementType.INTERFACE));
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells[0].includes('shape=ellipse'), 'Emit interface: shape=ellipse');
+	assert(cells[0].includes('width="20"'), 'Emit interface: width 20');
+	console.log('  Interface emission: OK');
+}
+
+{
+	// Node shape emission
+	const d = new ComponentDiagram();
+	d.addElement(new ComponentElement('srv', 'Server', CompElementType.NODE));
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells[0].includes('mxgraph.flowchart.process'), 'Emit node: shape');
+	console.log('  Node emission: OK');
+}
+
+{
+	// Database shape emission
+	const d = new ComponentDiagram();
+	d.addElement(new ComponentElement('db', 'Database', CompElementType.DATABASE));
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells[0].includes('cylinder3'), 'Emit database: shape');
+	console.log('  Database emission: OK');
+}
+
+{
+	// Cloud shape emission
+	const d = new ComponentDiagram();
+	d.addElement(new ComponentElement('c', 'Cloud', CompElementType.CLOUD));
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells[0].includes('shape=cloud'), 'Emit cloud: shape');
+	console.log('  Cloud emission: OK');
+}
+
+{
+	// Edge emission with decorators
+	const d = new ComponentDiagram();
+	d.addElement(new ComponentElement('A', 'A', CompElementType.COMPONENT));
+	d.addElement(new ComponentElement('B', 'B', CompElementType.COMPONENT));
+	const link = new ComponentRelationship('A', 'B');
+	link.rightDecor = CompRelationDecor.EXTENDS;
+	link.lineStyle = CompLineStyle.DASHED;
+	link.label = 'realizes';
+	d.addLink(link);
+	const cells = emitComponentDiagram(d, 'parent-1');
+	const edgeCell = cells.find(c => c.includes('edge="1"'));
+	assert(edgeCell !== undefined, 'Emit edge: has edge cell');
+	assert(edgeCell.includes('endArrow=block'), 'Emit edge: extends arrow');
+	assert(edgeCell.includes('dashed=1'), 'Emit edge: dashed');
+	assert(edgeCell.includes('realizes'), 'Emit edge: label');
+	console.log('  Edge with decorators: OK');
+}
+
+{
+	// Container emission
+	const d = new ComponentDiagram();
+	const container = new ComponentContainer('Server', 'Server', CompElementType.NODE, null);
+	d.addElement(new ComponentElement('app', 'App', CompElementType.COMPONENT));
+	d.elements.get('app').containerPath = 'Server';
+	container.elements.push('app');
+	d.containers.push(container);
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells.length >= 2, 'Emit container: at least 2 cells');
+	// First cell should be the container
+	assert(cells[0].includes('container=1'), 'Emit container: has container=1');
+	assert(cells[0].includes('Server'), 'Emit container: has Server label');
+	console.log('  Container emission: OK');
+}
+
+{
+	// Stereotype in label
+	const d = new ComponentDiagram();
+	const el = new ComponentElement('auth', 'Auth', CompElementType.COMPONENT);
+	el.stereotypes.push('Service');
+	d.addElement(el);
+	const cells = emitComponentDiagram(d, 'parent-1');
+	assert(cells[0].includes('&amp;lt;&amp;lt;Service&amp;gt;&amp;gt;'), 'Stereotype in label: present');
+	console.log('  Stereotype in label: OK');
+}
+
+section('Component Pipeline');
+
+{
+	// Full pipeline test
+	const result = convert(
+		'@startcomponent\n' +
+		'[Web Server] as WS\n' +
+		'[Database] as DB\n' +
+		'WS --> DB : stores data\n' +
+		'@endcomponent'
+	);
+	assert(result.diagramType === 'component', 'Pipeline: detected as component');
+	assert(result.xml.includes('shape=component'), 'Pipeline: has component shape');
+	assert(result.xml.includes('stores data'), 'Pipeline: has label');
+	assert(result.xml.includes('edge="1"'), 'Pipeline: has edge');
+	console.log('  Basic conversion: OK');
+}
+
+{
+	// Type detection
+	assert(detectDiagramType('@startcomponent\n[A]\n@endcomponent') === 'component', '@startcomponent detected');
+	assert(detectDiagramType('@startdeployment\nnode "S"\n@enddeployment') === 'component', '@startdeployment detected');
+	console.log('  Type detection: OK');
+}
+
+{
+	// Heuristic detection
+	assert(detectDiagramType('[A]\n[B]\n[A] --> [B]') === 'component', 'Heuristic: brackets');
+	assert(detectDiagramType('component "A" as A\ncomponent "B" as B\nA --> B') === 'component', 'Heuristic: keywords');
+	assert(detectDiagramType('node "S" {\n  [App]\n}') === 'component', 'Heuristic: node container + bracket');
+	console.log('  Heuristic detection: OK');
+}
+
+{
+	// No collision with existing types
+	const seqType = detectDiagramType('Alice -> Bob : hello');
+	assert(seqType === 'sequence', 'No collision: sequence still detected');
+	const classType = detectDiagramType('class Foo\nclass Bar\nFoo <|-- Bar');
+	assert(classType === 'class', 'No collision: class still detected');
+	const ucType = detectDiagramType('@startusecase\nactor User\nusecase (Login)\nUser --> (Login)');
+	assert(ucType === 'usecase', 'No collision: usecase still detected');
+	const actType = detectDiagramType('start\n:Do thing;\nstop');
+	assert(actType === 'activity', 'No collision: activity still detected');
+	console.log('  No collision with existing types: OK');
+}
+
+{
+	// Container conversion
+	const result = convert(
+		'node "Server" {\n' +
+		'  [App] as app\n' +
+		'  database "Cache" as cache\n' +
+		'}\n' +
+		'app --> cache'
+	);
+	assert(result.diagramType === 'component', 'Container pipeline: detected');
+	assert(result.xml.includes('container=1'), 'Container pipeline: has container');
+	assert(result.xml.includes('edge="1"'), 'Container pipeline: has edge');
+	console.log('  Container conversion: OK');
+}
+
+{
+	// Deployment elements conversion
+	const result = convert(
+		'node "App" as app\n' +
+		'cloud "AWS" as aws\n' +
+		'database "DB" as db\n' +
+		'app --> db\n' +
+		'aws --> app'
+	);
+	assert(result.diagramType === 'component', 'Deployment: detected');
+	assert(result.xml.includes('mxgraph.flowchart.process'), 'Deployment: node shape');
+	assert(result.xml.includes('shape=cloud'), 'Deployment: cloud shape');
+	assert(result.xml.includes('cylinder3'), 'Deployment: database shape');
+	console.log('  Deployment elements: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

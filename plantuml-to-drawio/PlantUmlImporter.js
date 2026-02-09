@@ -12,18 +12,21 @@
  *
  * Currently supports:
  *   - Class diagrams
+ *   - Component / Deployment diagrams
  *   - Usecase diagrams
  *   - Activity diagrams
  *   - Sequence diagrams
  *
- * Designed to be extended with additional diagram types (component,
- * state, etc.) by registering new handler entries.
+ * Designed to be extended with additional diagram types (state,
+ * etc.) by registering new handler entries.
  */
 
 import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
 import { emitSequenceDiagram } from './diagrams/sequence/SequenceEmitter.js';
 import { parseClassDiagram } from './diagrams/class/ClassParser.js';
 import { emitClassDiagram } from './diagrams/class/ClassEmitter.js';
+import { parseComponentDiagram } from './diagrams/component/ComponentParser.js';
+import { emitComponentDiagram } from './diagrams/component/ComponentEmitter.js';
 import { parseUsecaseDiagram } from './diagrams/usecase/UsecaseParser.js';
 import { emitUsecaseDiagram } from './diagrams/usecase/UsecaseEmitter.js';
 import { parseActivityDiagram } from './diagrams/activity/ActivityParser.js';
@@ -50,13 +53,18 @@ diagramHandlers.set('class', {
 
 		const lines = text.split('\n');
 		let classKeywords = 0;
+		let sharedKeywords = 0;  // interface/entity — shared with component/deployment
 		let classRelationships = 0;
 
 		for (const line of lines) {
 			const trimmed = line.trim();
-			// Class/interface/enum/abstract/object/map/json declarations
-			if (/^(?:abstract\s+class|class|interface|enum|annotation|entity|struct|record|object|map|json)\s+/i.test(trimmed)) {
+			// Class-specific keywords (not shared with description diagrams)
+			if (/^(?:abstract\s+class|class|enum|annotation|struct|record|object|map|json)\s+/i.test(trimmed)) {
 				classKeywords++;
+			}
+			// Shared keywords: interface and entity are valid in both class and component diagrams
+			if (/^(?:interface|entity)\s+/i.test(trimmed)) {
+				sharedKeywords++;
 			}
 			// Class-specific relationship patterns: <|--, *--, o--, ..|>, <|..
 			if (/(?:<\|--|--\|>|\*--|--\*|o--|--o|<\|\.\.|\.\.?\|>)/.test(trimmed)) {
@@ -64,10 +72,57 @@ diagramHandlers.set('class', {
 			}
 		}
 
-		return classKeywords >= 2 || (classKeywords >= 1 && classRelationships >= 1);
+		// Shared keywords (interface/entity) alone are NOT sufficient for class detection,
+		// because they also appear in component/deployment diagrams. Need at least one
+		// class-specific keyword (class, enum, abstract class, object, map, json, etc.)
+		return classKeywords >= 2 ||
+			(classKeywords >= 1 && classRelationships >= 1) ||
+			(classKeywords >= 1 && sharedKeywords >= 1);
 	},
 	parse: parseClassDiagram,
 	emit: emitClassDiagram
+});
+
+// Register component/deployment diagram handler (before usecase — both share the
+// DescriptionDiagram infrastructure, but component uses [bracket] shorthand and
+// deployment-specific keywords like node, cloud, database as containers)
+diagramHandlers.set('component', {
+	detect(text) {
+		// Explicit @startcomponent or @startdeployment
+		if (/@start(?:component|deployment)\b/i.test(text)) return true;
+
+		const lines = text.split('\n');
+		let score = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+
+			// Skip comments and directives
+			if (trimmed.startsWith("'") || /^@/.test(trimmed) || /^skinparam\b/i.test(trimmed)) continue;
+
+			// [bracket] shorthand (strong signal — unique to component diagrams)
+			if (/\[[^\[\]*]+\]/.test(trimmed) && !/^\s*note\b/i.test(trimmed)) score += 2;
+
+			// component/interface keyword declarations (not inside a link)
+			if (/^(?:component|interface)\s+/i.test(trimmed)) score += 2;
+
+			// Deployment-specific container keywords (with opening brace)
+			if (/^(?:node|cloud|artifact|storage|database|folder|file|frame)\s+.*\{\s*$/i.test(trimmed)) score += 2;
+
+			// Deployment element keywords (standalone, not container)
+			if (/^(?:artifact|storage|agent|person|portin|portout|port)\s+/i.test(trimmed)) score++;
+
+			// () interface shorthand
+			if (/^\(\)\s+/.test(trimmed)) score += 2;
+
+			// node/cloud/database as standalone element declaration (without brace)
+			if (/^(?:node|cloud|database)\s+"[^"]+"\s+as\s+\w/i.test(trimmed)) score++;
+		}
+
+		return score >= 3;
+	},
+	parse: parseComponentDiagram,
+	emit: emitComponentDiagram
 });
 
 // Register usecase diagram handler (before sequence — sequence's heuristic is broad

@@ -1,0 +1,17 @@
+@startuml
+[Component A] as A
+[Component B] as B
+
+A --> B
+
+note left of A : This is Component A
+
+note right of B
+	Multi-line note
+	about Component B
+end note
+
+note "Floating note" as N1
+
+note on link : Connection detail
+@enduml
