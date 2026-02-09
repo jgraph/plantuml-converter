@@ -1,0 +1,1135 @@
+/**
+ * Emitter for PlantUML activity diagrams → draw.io mxGraph XML.
+ *
+ * Uses a three-pass approach:
+ *   1. Measure (bottom-up): compute bounding boxes for each instruction subtree
+ *   2. Place (top-down): assign (x, y) coordinates
+ *   3. Emit: walk placed instructions and generate mxCell XML via MxBuilder
+ *
+ * The layout is a vertical flowchart.  Branching structures (if, switch, fork,
+ * split) place their branches side-by-side horizontally.  Loop structures
+ * (while, repeat) have back-arrows routed to the side.
+ */
+
+import {
+	InstructionType,
+	NotePosition,
+} from './ActivityModel.js';
+
+import {
+	buildCell,
+	buildStyle,
+	xmlEscape,
+	createIdGenerator,
+	geom,
+	normalizeColor,
+} from '../../MxBuilder.js';
+
+// ── Layout constants ───────────────────────────────────────────────────────
+
+const L = Object.freeze({
+	ACTION_WIDTH:       140,
+	ACTION_HEIGHT:       40,
+	ACTION_CHAR_WIDTH:    7,
+	ACTION_PADDING:      30,
+	ACTION_LINE_HEIGHT:  20,
+	DIAMOND_SIZE:        40,
+	CIRCLE_SIZE:         30,
+	BAR_WIDTH:           80,   // min width for fork/join bars
+	BAR_HEIGHT:           6,
+	NOTE_WIDTH:         140,
+	NOTE_MIN_HEIGHT:     40,
+	NOTE_LINE_HEIGHT:    16,
+	NOTE_OFFSET:        160,   // horizontal offset from flow center
+	H_GAP:               40,
+	V_GAP:               30,
+	PARTITION_PAD:       20,
+	PARTITION_HEADER:    25,
+	SWIMLANE_MIN_W:     200,
+	SWIMLANE_HEADER:     30,
+	MARGIN:              40,
+	LOOP_OFFSET:         30,   // horizontal offset for loop back-arrows
+});
+
+// ── Style builders ─────────────────────────────────────────────────────────
+
+function actionStyle(color) {
+	const s = {
+		rounded: 1,
+		whiteSpace: 'wrap',
+		html: 1,
+		align: 'center',
+		verticalAlign: 'middle',
+	};
+	if (color) s.fillColor = normalizeColor(color);
+	return buildStyle(s);
+}
+
+function startStyle() {
+	return buildStyle({
+		ellipse: '',
+		fillColor: '#000000',
+		strokeColor: '#000000',
+		html: 1,
+	});
+}
+
+function stopStyle() {
+	return buildStyle({
+		shape: 'doubleCircle',
+		fillColor: '#000000',
+		strokeColor: '#000000',
+		html: 1,
+	});
+}
+
+function endStyle() {
+	return buildStyle({
+		shape: 'doubleCircle',
+		fillColor: '#000000',
+		strokeColor: '#000000',
+		html: 1,
+	});
+}
+
+function killStyle() {
+	return buildStyle({
+		shape: 'mxgraph.flowchart.terminate',
+		fillColor: '#000000',
+		strokeColor: '#000000',
+		html: 1,
+	});
+}
+
+function diamondStyle(color) {
+	const s = {
+		rhombus: '',
+		whiteSpace: 'wrap',
+		html: 1,
+		fillColor: '#FFFDE7',
+		strokeColor: '#FBC02D',
+	};
+	if (color) s.fillColor = normalizeColor(color);
+	return buildStyle(s);
+}
+
+function mergeStyle() {
+	return buildStyle({
+		rhombus: '',
+		fillColor: '#FFFDE7',
+		strokeColor: '#FBC02D',
+		html: 1,
+	});
+}
+
+function barStyle() {
+	return buildStyle({
+		fillColor: '#000000',
+		strokeColor: '#000000',
+		html: 1,
+	});
+}
+
+function partitionStyle(color) {
+	const s = {
+		rounded: 0,
+		whiteSpace: 'wrap',
+		html: 1,
+		verticalAlign: 'top',
+		fontStyle: 1,
+		fillColor: 'none',
+		strokeColor: '#666666',
+		dashed: 1,
+	};
+	if (color) s.fillColor = normalizeColor(color);
+	return buildStyle(s);
+}
+
+function noteStyle(color) {
+	const s = {
+		shape: 'note',
+		whiteSpace: 'wrap',
+		html: 1,
+		size: 14,
+		verticalAlign: 'top',
+		align: 'left',
+		spacingLeft: 4,
+		fillColor: '#FFF2CC',
+		strokeColor: '#D6B656',
+	};
+	if (color) s.fillColor = normalizeColor(color);
+	return buildStyle(s);
+}
+
+function edgeStyle(color, dashed) {
+	const s = {
+		html: 1,
+		rounded: 0,
+		endArrow: 'block',
+		endFill: 1,
+	};
+	if (color) s.strokeColor = normalizeColor(color);
+	if (dashed) s.dashed = 1;
+	return buildStyle(s);
+}
+
+function swimlaneStyle(color) {
+	const s = {
+		shape: 'swimlane',
+		startSize: L.SWIMLANE_HEADER,
+		html: 1,
+		collapsible: 0,
+		fontStyle: 1,
+		fillColor: 'none',
+		swimlaneLine: 1,
+	};
+	if (color) s.fillColor = normalizeColor(color);
+	return buildStyle(s);
+}
+
+function breakStyle() {
+	return buildStyle({
+		rounded: 1,
+		whiteSpace: 'wrap',
+		html: 1,
+		fillColor: '#F8CECC',
+		strokeColor: '#B85450',
+		dashed: 1,
+	});
+}
+
+// ── Emitter class ──────────────────────────────────────────────────────────
+
+class ActivityEmitter {
+	constructor(parentId) {
+		this.parentId = parentId;
+		this.nextId = createIdGenerator('puml');
+		this.cells = [];
+	}
+
+	/**
+	 * Emit an ActivityDiagram model as an array of mxCell XML strings.
+	 * @param {import('./ActivityModel.js').ActivityDiagram} diagram
+	 * @returns {string[]}
+	 */
+	emit(diagram) {
+		this.diagram = diagram;
+
+		// Filter out pure ARROW instructions at top level for measurement
+		// (they don't occupy space themselves — they style the next edge)
+		const flowInstructions = diagram.instructions;
+
+		// 1. Measure
+		const size = this._measureSequence(flowInstructions);
+
+		// 2. Place
+		const startX = L.MARGIN + size.width / 2;
+		const startY = L.MARGIN;
+
+		if (diagram.swimlanes.size > 0) {
+			this._placeSwimlanes(diagram, flowInstructions, size);
+		} else {
+			this._placeSequence(flowInstructions, startX, startY, size.width);
+		}
+
+		// 3. Emit
+		if (diagram.swimlanes.size > 0) {
+			this._emitSwimlanes(diagram, size);
+		}
+		this._emitSequence(flowInstructions);
+
+		return this.cells;
+	}
+
+	// ── Measure pass ───────────────────────────────────────────────────────
+
+	_measureSequence(instructions) {
+		let totalHeight = 0;
+		let maxWidth = 0;
+
+		for (let i = 0; i < instructions.length; i++) {
+			const instr = instructions[i];
+			const size = this._measureInstruction(instr);
+			instr._size = size;
+
+			if (instr.type === InstructionType.ARROW) {
+				// Arrows don't occupy vertical space in layout;
+				// they modify the next edge's style
+				continue;
+			}
+
+			if (totalHeight > 0) totalHeight += L.V_GAP;
+			totalHeight += size.height;
+			maxWidth = Math.max(maxWidth, size.width);
+		}
+
+		return { width: maxWidth || L.ACTION_WIDTH, height: totalHeight };
+	}
+
+	_measureInstruction(instr) {
+		switch (instr.type) {
+			case InstructionType.ACTION:
+				return this._measureAction(instr);
+			case InstructionType.START:
+			case InstructionType.STOP:
+			case InstructionType.END:
+			case InstructionType.KILL:
+				return { width: L.CIRCLE_SIZE, height: L.CIRCLE_SIZE };
+			case InstructionType.BREAK:
+				return { width: L.ACTION_WIDTH, height: L.ACTION_HEIGHT };
+			case InstructionType.IF:
+				return this._measureIf(instr);
+			case InstructionType.WHILE:
+				return this._measureWhile(instr);
+			case InstructionType.REPEAT:
+				return this._measureRepeat(instr);
+			case InstructionType.SWITCH:
+				return this._measureSwitch(instr);
+			case InstructionType.FORK:
+			case InstructionType.SPLIT:
+				return this._measureForkSplit(instr);
+			case InstructionType.PARTITION:
+				return this._measurePartition(instr);
+			case InstructionType.NOTE:
+				return this._measureNote(instr);
+			case InstructionType.ARROW:
+				return { width: 0, height: 0 };
+			default:
+				return { width: L.ACTION_WIDTH, height: L.ACTION_HEIGHT };
+		}
+	}
+
+	_measureAction(instr) {
+		const lines = (instr.label || '').split('\n');
+		const maxLineLen = Math.max(...lines.map(l => l.length));
+		const w = Math.max(L.ACTION_WIDTH, maxLineLen * L.ACTION_CHAR_WIDTH + L.ACTION_PADDING);
+		const h = Math.max(L.ACTION_HEIGHT, lines.length * L.ACTION_LINE_HEIGHT + 20);
+		return { width: w, height: h };
+	}
+
+	_measureIf(instr) {
+		const thenSize = this._measureSequence(instr.thenBranch);
+		const elseSize = this._measureSequence(instr.elseBranch);
+
+		// ElseIf branches add height to the else side
+		let elseIfHeight = 0;
+		let elseIfMaxWidth = 0;
+		for (const eib of instr.elseIfBranches) {
+			const eibSize = this._measureSequence(eib.instructions);
+			eib._size = eibSize;
+			elseIfHeight += L.DIAMOND_SIZE + L.V_GAP + eibSize.height + L.V_GAP;
+			elseIfMaxWidth = Math.max(elseIfMaxWidth, eibSize.width);
+		}
+
+		const leftWidth = Math.max(thenSize.width, L.DIAMOND_SIZE);
+		const rightWidth = Math.max(elseSize.width, elseIfMaxWidth, L.DIAMOND_SIZE);
+		const branchHeight = Math.max(
+			thenSize.height,
+			elseSize.height + elseIfHeight
+		);
+
+		const w = leftWidth + L.H_GAP + rightWidth;
+		const h = L.DIAMOND_SIZE + L.V_GAP + branchHeight + L.V_GAP + L.DIAMOND_SIZE / 2;
+
+		instr._thenSize = thenSize;
+		instr._elseSize = elseSize;
+		instr._leftWidth = leftWidth;
+		instr._rightWidth = rightWidth;
+
+		return { width: w, height: h };
+	}
+
+	_measureWhile(instr) {
+		const bodySize = this._measureSequence(instr.whileBody);
+		instr._bodySize = bodySize;
+
+		const w = Math.max(bodySize.width + L.LOOP_OFFSET * 2, L.DIAMOND_SIZE + L.LOOP_OFFSET * 2);
+		const h = L.DIAMOND_SIZE + L.V_GAP + bodySize.height + L.V_GAP;
+		return { width: w, height: h };
+	}
+
+	_measureRepeat(instr) {
+		const bodySize = this._measureSequence(instr.repeatBody);
+		instr._bodySize = bodySize;
+
+		const w = Math.max(bodySize.width + L.LOOP_OFFSET * 2, L.DIAMOND_SIZE + L.LOOP_OFFSET * 2);
+		const h = bodySize.height + L.V_GAP + L.DIAMOND_SIZE + L.V_GAP;
+		return { width: w, height: h };
+	}
+
+	_measureSwitch(instr) {
+		let totalCaseWidth = 0;
+		let maxCaseHeight = 0;
+
+		for (const c of instr.switchCases) {
+			const cSize = this._measureSequence(c.instructions);
+			c._size = cSize;
+			totalCaseWidth += Math.max(cSize.width, L.ACTION_WIDTH);
+			maxCaseHeight = Math.max(maxCaseHeight, cSize.height);
+		}
+		if (instr.switchCases.length > 1) {
+			totalCaseWidth += L.H_GAP * (instr.switchCases.length - 1);
+		}
+
+		const w = Math.max(totalCaseWidth, L.DIAMOND_SIZE);
+		const h = L.DIAMOND_SIZE + L.V_GAP + maxCaseHeight + L.V_GAP + L.DIAMOND_SIZE / 2;
+
+		instr._maxCaseHeight = maxCaseHeight;
+		return { width: w, height: h };
+	}
+
+	_measureForkSplit(instr) {
+		let totalBranchWidth = 0;
+		let maxBranchHeight = 0;
+
+		for (const branch of instr.branches) {
+			const bSize = this._measureSequence(branch);
+			branch._size = bSize;
+			totalBranchWidth += Math.max(bSize.width, L.ACTION_WIDTH);
+			maxBranchHeight = Math.max(maxBranchHeight, bSize.height);
+		}
+		if (instr.branches.length > 1) {
+			totalBranchWidth += L.H_GAP * (instr.branches.length - 1);
+		}
+
+		const w = Math.max(totalBranchWidth, L.BAR_WIDTH);
+		const h = L.BAR_HEIGHT + L.V_GAP + maxBranchHeight + L.V_GAP + L.BAR_HEIGHT;
+
+		instr._maxBranchHeight = maxBranchHeight;
+		return { width: w, height: h };
+	}
+
+	_measurePartition(instr) {
+		const bodySize = this._measureSequence(instr.partitionBody);
+		instr._bodySize = bodySize;
+
+		const w = bodySize.width + L.PARTITION_PAD * 2;
+		const h = L.PARTITION_HEADER + bodySize.height + L.PARTITION_PAD;
+		return { width: w, height: h };
+	}
+
+	_measureNote(instr) {
+		const lines = (instr.noteText || '').split('\n');
+		const h = Math.max(L.NOTE_MIN_HEIGHT, lines.length * L.NOTE_LINE_HEIGHT + 16);
+		return { width: L.NOTE_WIDTH, height: h };
+	}
+
+	// ── Place pass ─────────────────────────────────────────────────────────
+
+	_placeSequence(instructions, cx, y, availWidth) {
+		let currentY = y;
+		for (const instr of instructions) {
+			if (instr.type === InstructionType.ARROW) continue;
+			this._placeInstruction(instr, cx, currentY, availWidth);
+			currentY += instr._size.height + L.V_GAP;
+		}
+	}
+
+	_placeInstruction(instr, cx, y, availWidth) {
+		switch (instr.type) {
+			case InstructionType.ACTION:
+			case InstructionType.BREAK:
+				instr._x = cx - instr._size.width / 2;
+				instr._y = y;
+				break;
+
+			case InstructionType.START:
+			case InstructionType.STOP:
+			case InstructionType.END:
+			case InstructionType.KILL:
+				instr._x = cx - L.CIRCLE_SIZE / 2;
+				instr._y = y;
+				break;
+
+			case InstructionType.IF:
+				this._placeIf(instr, cx, y);
+				break;
+
+			case InstructionType.WHILE:
+				this._placeWhile(instr, cx, y);
+				break;
+
+			case InstructionType.REPEAT:
+				this._placeRepeat(instr, cx, y);
+				break;
+
+			case InstructionType.SWITCH:
+				this._placeSwitch(instr, cx, y);
+				break;
+
+			case InstructionType.FORK:
+			case InstructionType.SPLIT:
+				this._placeForkSplit(instr, cx, y);
+				break;
+
+			case InstructionType.PARTITION:
+				this._placePartition(instr, cx, y);
+				break;
+
+			case InstructionType.NOTE:
+				this._placeNote(instr, cx, y);
+				break;
+		}
+	}
+
+	_placeIf(instr, cx, y) {
+		// Diamond at top center
+		instr._diamondX = cx - L.DIAMOND_SIZE / 2;
+		instr._diamondY = y;
+
+		const branchY = y + L.DIAMOND_SIZE + L.V_GAP;
+
+		// Then branch to the left
+		const thenCx = cx - L.H_GAP / 2 - instr._leftWidth / 2;
+		this._placeSequence(instr.thenBranch, thenCx, branchY, instr._leftWidth);
+
+		// Else branch to the right (including elseif)
+		const elseCx = cx + L.H_GAP / 2 + instr._rightWidth / 2;
+		this._placeSequence(instr.elseBranch, elseCx, branchY, instr._rightWidth);
+
+		// ElseIf branches placed below else
+		let eibY = branchY + (instr._elseSize ? instr._elseSize.height : 0);
+		for (const eib of instr.elseIfBranches) {
+			if (eibY > branchY) eibY += L.V_GAP;
+			eib._diamondX = elseCx - L.DIAMOND_SIZE / 2;
+			eib._diamondY = eibY;
+			eibY += L.DIAMOND_SIZE + L.V_GAP;
+			this._placeSequence(eib.instructions, elseCx, eibY, instr._rightWidth);
+			eibY += eib._size.height;
+		}
+
+		// Merge point at bottom center
+		instr._mergeX = cx - L.DIAMOND_SIZE / 4;
+		instr._mergeY = y + instr._size.height - L.DIAMOND_SIZE / 2;
+	}
+
+	_placeWhile(instr, cx, y) {
+		// Diamond at top
+		instr._diamondX = cx - L.DIAMOND_SIZE / 2;
+		instr._diamondY = y;
+
+		// Body below diamond
+		const bodyY = y + L.DIAMOND_SIZE + L.V_GAP;
+		this._placeSequence(instr.whileBody, cx, bodyY, instr._bodySize.width);
+	}
+
+	_placeRepeat(instr, cx, y) {
+		// Body at top
+		this._placeSequence(instr.repeatBody, cx, y, instr._bodySize.width);
+
+		// Diamond below body
+		instr._diamondX = cx - L.DIAMOND_SIZE / 2;
+		instr._diamondY = y + instr._bodySize.height + L.V_GAP;
+	}
+
+	_placeSwitch(instr, cx, y) {
+		// Diamond at top
+		instr._diamondX = cx - L.DIAMOND_SIZE / 2;
+		instr._diamondY = y;
+
+		// Cases placed side-by-side below diamond
+		const caseY = y + L.DIAMOND_SIZE + L.V_GAP;
+		const totalW = instr._size.width;
+		let caseX = cx - totalW / 2;
+
+		for (const c of instr.switchCases) {
+			const caseW = Math.max(c._size.width, L.ACTION_WIDTH);
+			const caseCx = caseX + caseW / 2;
+			this._placeSequence(c.instructions, caseCx, caseY, caseW);
+			caseX += caseW + L.H_GAP;
+		}
+
+		// Merge at bottom
+		instr._mergeX = cx - L.DIAMOND_SIZE / 4;
+		instr._mergeY = y + instr._size.height - L.DIAMOND_SIZE / 2;
+	}
+
+	_placeForkSplit(instr, cx, y) {
+		// Top bar
+		instr._topBarX = cx - instr._size.width / 2;
+		instr._topBarY = y;
+
+		// Branches below top bar
+		const branchY = y + L.BAR_HEIGHT + L.V_GAP;
+		const totalW = instr._size.width;
+		let branchX = cx - totalW / 2;
+
+		for (const branch of instr.branches) {
+			const bw = Math.max(branch._size.width, L.ACTION_WIDTH);
+			const branchCx = branchX + bw / 2;
+			this._placeSequence(branch, branchCx, branchY, bw);
+			branchX += bw + L.H_GAP;
+		}
+
+		// Bottom bar
+		instr._botBarX = cx - instr._size.width / 2;
+		instr._botBarY = y + instr._size.height - L.BAR_HEIGHT;
+	}
+
+	_placePartition(instr, cx, y) {
+		instr._x = cx - instr._size.width / 2;
+		instr._y = y;
+
+		// Body inside partition
+		const bodyY = y + L.PARTITION_HEADER;
+		this._placeSequence(instr.partitionBody, cx, bodyY, instr._bodySize.width);
+	}
+
+	_placeNote(instr, cx, y) {
+		// Notes offset to the side
+		if (instr.notePosition === NotePosition.LEFT) {
+			instr._x = cx - L.NOTE_OFFSET - L.NOTE_WIDTH / 2;
+		} else {
+			instr._x = cx + L.NOTE_OFFSET - L.NOTE_WIDTH / 2;
+		}
+		instr._y = y;
+	}
+
+	_placeSwimlanes(diagram, instructions, totalSize) {
+		// Collect unique swimlane names in order of first appearance
+		const laneOrder = [];
+		const laneInstructions = new Map();
+
+		for (const [name] of diagram.swimlanes) {
+			laneOrder.push(name);
+			laneInstructions.set(name, []);
+		}
+
+		// Also create a "default" lane for unassigned instructions
+		const defaultLane = '__default__';
+		const hasUnassigned = instructions.some(i => i.swimlane === null);
+		if (hasUnassigned) {
+			laneOrder.unshift(defaultLane);
+			laneInstructions.set(defaultLane, []);
+		}
+
+		// Distribute instructions to lanes
+		for (const instr of instructions) {
+			const lane = instr.swimlane || defaultLane;
+			if (laneInstructions.has(lane) === false) {
+				laneInstructions.set(lane, []);
+			}
+			laneInstructions.get(lane).push(instr);
+		}
+
+		// Measure and place each lane
+		let laneX = L.MARGIN;
+		for (const laneName of laneOrder) {
+			const laneInstrs = laneInstructions.get(laneName);
+			const laneSize = this._measureSequence(laneInstrs);
+			const laneW = Math.max(L.SWIMLANE_MIN_W, laneSize.width + L.PARTITION_PAD * 2);
+
+			const def = diagram.swimlanes.get(laneName);
+			if (def) {
+				def._x = laneX;
+				def._width = laneW;
+				def._height = totalSize.height + L.SWIMLANE_HEADER + L.MARGIN;
+			}
+
+			const cx = laneX + laneW / 2;
+			this._placeSequence(laneInstrs, cx, L.MARGIN + L.SWIMLANE_HEADER, laneSize.width);
+			laneX += laneW;
+		}
+	}
+
+	// ── Emit pass ──────────────────────────────────────────────────────────
+
+	_emitSequence(instructions) {
+		let prevCellId = null;
+		let pendingArrowInstr = null;
+
+		for (const instr of instructions) {
+			if (instr.type === InstructionType.ARROW) {
+				pendingArrowInstr = instr;
+				continue;
+			}
+
+			const result = this._emitInstruction(instr);
+
+			// Connect to previous element
+			if (prevCellId !== null && result.entryId !== null) {
+				const arrowColor = pendingArrowInstr ? pendingArrowInstr.arrowColor : null;
+				const arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
+				this._emitEdge(prevCellId, result.entryId, arrowLabel, arrowColor);
+			}
+
+			pendingArrowInstr = null;
+			prevCellId = result.exitId;
+		}
+	}
+
+	/**
+	 * Emit a single instruction.  Returns { entryId, exitId } for edge wiring.
+	 */
+	_emitInstruction(instr) {
+		switch (instr.type) {
+			case InstructionType.ACTION:
+				return this._emitAction(instr);
+			case InstructionType.START:
+				return this._emitStart(instr);
+			case InstructionType.STOP:
+				return this._emitStop(instr);
+			case InstructionType.END:
+				return this._emitEnd(instr);
+			case InstructionType.KILL:
+				return this._emitKill(instr);
+			case InstructionType.BREAK:
+				return this._emitBreak(instr);
+			case InstructionType.IF:
+				return this._emitIf(instr);
+			case InstructionType.WHILE:
+				return this._emitWhile(instr);
+			case InstructionType.REPEAT:
+				return this._emitRepeat(instr);
+			case InstructionType.SWITCH:
+				return this._emitSwitch(instr);
+			case InstructionType.FORK:
+			case InstructionType.SPLIT:
+				return this._emitForkSplit(instr);
+			case InstructionType.PARTITION:
+				return this._emitPartition(instr);
+			case InstructionType.NOTE:
+				return this._emitNote(instr);
+			default:
+				return { entryId: null, exitId: null };
+		}
+	}
+
+	_emitAction(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: instr.label || '',
+			style: actionStyle(instr.color),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, instr._size.width, instr._size.height),
+		}));
+		return { entryId: id, exitId: id };
+	}
+
+	_emitStart(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: '',
+			style: startStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, L.CIRCLE_SIZE, L.CIRCLE_SIZE),
+		}));
+		return { entryId: id, exitId: id };
+	}
+
+	_emitStop(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: '',
+			style: stopStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, L.CIRCLE_SIZE, L.CIRCLE_SIZE),
+		}));
+		return { entryId: id, exitId: id };
+	}
+
+	_emitEnd(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: '',
+			style: endStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, L.CIRCLE_SIZE, L.CIRCLE_SIZE),
+		}));
+		return { entryId: id, exitId: id };
+	}
+
+	_emitKill(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: '',
+			style: killStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, L.CIRCLE_SIZE, L.CIRCLE_SIZE),
+		}));
+		return { entryId: id, exitId: null }; // kill has no exit
+	}
+
+	_emitBreak(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: 'break',
+			style: breakStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, L.ACTION_WIDTH, L.ACTION_HEIGHT),
+		}));
+		return { entryId: id, exitId: null }; // break terminates flow
+	}
+
+	_emitIf(instr) {
+		// Diamond
+		const diamondId = this.nextId();
+		this.cells.push(buildCell({
+			id: diamondId,
+			value: instr.condition || '',
+			style: diamondStyle(instr.color),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+		}));
+
+		// Merge point
+		const mergeId = this.nextId();
+		this.cells.push(buildCell({
+			id: mergeId,
+			value: '',
+			style: mergeStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._mergeX, instr._mergeY, L.DIAMOND_SIZE / 2, L.DIAMOND_SIZE / 2),
+		}));
+
+		// Emit then branch
+		const thenResult = this._emitBranch(instr.thenBranch);
+
+		// Connect diamond → then branch
+		if (thenResult.entryId) {
+			this._emitEdge(diamondId, thenResult.entryId, instr.thenLabel);
+		}
+		// Connect then branch → merge
+		if (thenResult.exitId) {
+			this._emitEdge(thenResult.exitId, mergeId);
+		}
+
+		// Emit else branch
+		if (instr.elseBranch.length > 0) {
+			const elseResult = this._emitBranch(instr.elseBranch);
+			if (elseResult.entryId) {
+				this._emitEdge(diamondId, elseResult.entryId, instr.elseLabel);
+			}
+			if (elseResult.exitId) {
+				this._emitEdge(elseResult.exitId, mergeId);
+			}
+		} else if (instr.elseIfBranches.length === 0) {
+			// No else, no elseif — direct edge from diamond to merge
+			this._emitEdge(diamondId, mergeId, instr.elseLabel);
+		}
+
+		// Emit elseIf branches
+		let prevDiamondId = diamondId;
+		for (const eib of instr.elseIfBranches) {
+			const eibDiamondId = this.nextId();
+			this.cells.push(buildCell({
+				id: eibDiamondId,
+				value: eib.condition || '',
+				style: diamondStyle(),
+				vertex: true,
+				parent: this.parentId,
+				geometry: geom(eib._diamondX, eib._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+			}));
+
+			// Connect previous diamond → this elseif diamond
+			this._emitEdge(prevDiamondId, eibDiamondId, instr.elseLabel);
+
+			// Emit elseif branch body
+			const eibResult = this._emitBranch(eib.instructions);
+			if (eibResult.entryId) {
+				this._emitEdge(eibDiamondId, eibResult.entryId, eib.label);
+			}
+			if (eibResult.exitId) {
+				this._emitEdge(eibResult.exitId, mergeId);
+			}
+
+			prevDiamondId = eibDiamondId;
+		}
+
+		// If there were elseIfs but no final else, connect last elseif diamond → merge
+		if (instr.elseIfBranches.length > 0 && instr.elseBranch.length === 0) {
+			this._emitEdge(prevDiamondId, mergeId);
+		}
+
+		return { entryId: diamondId, exitId: mergeId };
+	}
+
+	_emitWhile(instr) {
+		// Diamond
+		const diamondId = this.nextId();
+		this.cells.push(buildCell({
+			id: diamondId,
+			value: instr.whileCondition || '',
+			style: diamondStyle(instr.color),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+		}));
+
+		// Emit body
+		const bodyResult = this._emitBranch(instr.whileBody);
+
+		// Diamond → body (yes)
+		if (bodyResult.entryId) {
+			this._emitEdge(diamondId, bodyResult.entryId, instr.whileYesLabel);
+		}
+
+		// Body → diamond (loop back)
+		if (bodyResult.exitId) {
+			this._emitLoopBack(bodyResult.exitId, diamondId, instr);
+		}
+
+		// Diamond exit (no) — the next instruction will connect here
+		// We use the diamond as both entry and exit.
+		// The "no" label will be on the edge from diamond to next instruction.
+		// Store it for the parent to use.
+		instr._exitLabel = instr.whileNoLabel;
+
+		return { entryId: diamondId, exitId: diamondId };
+	}
+
+	_emitRepeat(instr) {
+		// Emit body first
+		const bodyResult = this._emitBranch(instr.repeatBody);
+
+		// Diamond at bottom
+		const diamondId = this.nextId();
+		this.cells.push(buildCell({
+			id: diamondId,
+			value: instr.repeatCondition || '',
+			style: diamondStyle(instr.color),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+		}));
+
+		// Body → diamond
+		if (bodyResult.exitId) {
+			this._emitEdge(bodyResult.exitId, diamondId);
+		}
+
+		// Diamond → body (loop back, "yes")
+		if (bodyResult.entryId) {
+			this._emitLoopBack(diamondId, bodyResult.entryId, instr, instr.repeatYesLabel);
+		}
+
+		// Entry is the body top, exit is the diamond (continues to next via "no")
+		instr._exitLabel = instr.repeatNoLabel;
+
+		return { entryId: bodyResult.entryId || diamondId, exitId: diamondId };
+	}
+
+	_emitSwitch(instr) {
+		// Diamond
+		const diamondId = this.nextId();
+		this.cells.push(buildCell({
+			id: diamondId,
+			value: instr.switchCondition || '',
+			style: diamondStyle(instr.color),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._diamondX, instr._diamondY, L.DIAMOND_SIZE, L.DIAMOND_SIZE),
+		}));
+
+		// Merge point
+		const mergeId = this.nextId();
+		this.cells.push(buildCell({
+			id: mergeId,
+			value: '',
+			style: mergeStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._mergeX, instr._mergeY, L.DIAMOND_SIZE / 2, L.DIAMOND_SIZE / 2),
+		}));
+
+		// Emit cases
+		for (const c of instr.switchCases) {
+			const cResult = this._emitBranch(c.instructions);
+			if (cResult.entryId) {
+				this._emitEdge(diamondId, cResult.entryId, c.label);
+			}
+			if (cResult.exitId) {
+				this._emitEdge(cResult.exitId, mergeId);
+			}
+		}
+
+		return { entryId: diamondId, exitId: mergeId };
+	}
+
+	_emitForkSplit(instr) {
+		// Top bar
+		const topBarId = this.nextId();
+		this.cells.push(buildCell({
+			id: topBarId,
+			value: '',
+			style: barStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._topBarX, instr._topBarY, instr._size.width, L.BAR_HEIGHT),
+		}));
+
+		// Bottom bar
+		const botBarId = this.nextId();
+		this.cells.push(buildCell({
+			id: botBarId,
+			value: '',
+			style: barStyle(),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._botBarX, instr._botBarY, instr._size.width, L.BAR_HEIGHT),
+		}));
+
+		// Emit branches
+		for (const branch of instr.branches) {
+			const bResult = this._emitBranch(branch);
+			if (bResult.entryId) {
+				this._emitEdge(topBarId, bResult.entryId);
+			}
+			if (bResult.exitId) {
+				this._emitEdge(bResult.exitId, botBarId);
+			}
+		}
+
+		return { entryId: topBarId, exitId: botBarId };
+	}
+
+	_emitPartition(instr) {
+		// Partition container
+		const partId = this.nextId();
+		this.cells.push(buildCell({
+			id: partId,
+			value: instr.partitionName || '',
+			style: partitionStyle(instr.partitionColor),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, instr._size.width, instr._size.height),
+		}));
+
+		// Emit body (body cells have the partition as visual context but
+		// still use the main parentId for draw.io grouping)
+		const bodyResult = this._emitBranch(instr.partitionBody);
+
+		return { entryId: bodyResult.entryId || partId, exitId: bodyResult.exitId || partId };
+	}
+
+	_emitNote(instr) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: instr.noteText || '',
+			style: noteStyle(instr.color),
+			vertex: true,
+			parent: this.parentId,
+			geometry: geom(instr._x, instr._y, L.NOTE_WIDTH, instr._size.height),
+		}));
+		// Notes don't participate in flow — they don't break the edge chain
+		return { entryId: null, exitId: null };
+	}
+
+	_emitSwimlanes(diagram, totalSize) {
+		for (const [name, def] of diagram.swimlanes) {
+			if (def._x === undefined) continue;
+			const id = this.nextId();
+			this.cells.push(buildCell({
+				id,
+				value: def.label || name,
+				style: swimlaneStyle(def.color),
+				vertex: true,
+				parent: this.parentId,
+				geometry: geom(def._x, 0, def._width, def._height),
+			}));
+		}
+	}
+
+	// ── Helpers ────────────────────────────────────────────────────────────
+
+	/**
+	 * Emit a sequence of instructions as a branch, returning entry/exit IDs.
+	 */
+	_emitBranch(instructions) {
+		if (instructions.length === 0) {
+			return { entryId: null, exitId: null };
+		}
+
+		let firstId = null;
+		let prevExitId = null;
+		let pendingArrowInstr = null;
+
+		for (const instr of instructions) {
+			if (instr.type === InstructionType.ARROW) {
+				pendingArrowInstr = instr;
+				continue;
+			}
+
+			const result = this._emitInstruction(instr);
+
+			if (firstId === null) {
+				firstId = result.entryId;
+			}
+
+			if (prevExitId !== null && result.entryId !== null) {
+				const arrowColor = pendingArrowInstr ? pendingArrowInstr.arrowColor : null;
+				const arrowLabel = pendingArrowInstr ? pendingArrowInstr.arrowLabel : null;
+				this._emitEdge(prevExitId, result.entryId, arrowLabel, arrowColor);
+			}
+
+			pendingArrowInstr = null;
+			prevExitId = result.exitId;
+		}
+
+		return { entryId: firstId, exitId: prevExitId };
+	}
+
+	/**
+	 * Emit a standard directed edge between two cells.
+	 */
+	_emitEdge(sourceId, targetId, label, color) {
+		if (sourceId === null || targetId === null) return;
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: label || '',
+			style: edgeStyle(color),
+			edge: true,
+			source: sourceId,
+			target: targetId,
+			parent: this.parentId,
+		}));
+	}
+
+	/**
+	 * Emit a loop-back edge (for while/repeat).
+	 * Uses sourcePoint/targetPoint with waypoints to route around the body.
+	 */
+	_emitLoopBack(sourceId, targetId, loopInstr, label) {
+		const id = this.nextId();
+		this.cells.push(buildCell({
+			id,
+			value: label || '',
+			style: edgeStyle(null, false),
+			edge: true,
+			source: sourceId,
+			target: targetId,
+			parent: this.parentId,
+		}));
+	}
+}
+
+// ── Public API ─────────────────────────────────────────────────────────────
+
+/**
+ * Emit an ActivityDiagram model as an array of mxCell XML strings.
+ * @param {import('./ActivityModel.js').ActivityDiagram} diagram
+ * @param {string} parentId
+ * @returns {string[]}
+ */
+export function emitActivityDiagram(diagram, parentId) {
+	const emitter = new ActivityEmitter(parentId);
+	return emitter.emit(diagram);
+}
+
+export { ActivityEmitter };

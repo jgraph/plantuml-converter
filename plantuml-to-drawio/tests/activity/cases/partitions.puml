@@ -1,0 +1,24 @@
+@startuml
+start
+
+partition "Input Processing" {
+  :Read input;
+  :Validate;
+}
+
+partition #LightBlue "Business Logic" {
+  :Process data;
+  if (Valid?) then (yes)
+    :Accept;
+  else (no)
+    :Reject;
+  endif
+}
+
+partition "Output" {
+  :Generate report;
+  :Send notification;
+}
+
+stop
+@enduml

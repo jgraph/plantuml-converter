@@ -1,0 +1,21 @@
+@startuml
+start
+
+:Action with note;
+note right: Simple right note
+
+:Another action;
+note left: Simple left note
+
+:Third action;
+note right
+  This is a
+  multiline note
+  with three lines
+end note
+
+floating note right: This floats
+
+:Final action;
+stop
+@enduml

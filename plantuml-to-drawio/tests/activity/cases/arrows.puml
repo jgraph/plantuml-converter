@@ -1,0 +1,11 @@
+@startuml
+start
+:First action;
+-> Plain label;
+:After plain arrow;
+-[#red]-> Red label;
+:After red arrow;
+-[#blue,dashed]-> Dashed blue;
+:After dashed arrow;
+stop
+@enduml

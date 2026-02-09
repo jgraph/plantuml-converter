@@ -1,0 +1,9 @@
+@startuml
+start
+:Simple action;
+:Another action;
+#LightBlue:Colored action;
+:Multiline
+action text;
+stop
+@enduml

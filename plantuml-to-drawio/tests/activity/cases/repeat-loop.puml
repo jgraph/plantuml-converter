@@ -1,0 +1,18 @@
+@startuml
+start
+
+repeat
+  :Process;
+repeat while (Again?)
+
+repeat
+  :Step A;
+  :Step B;
+repeat while (Condition?) is (yes) not (no)
+
+repeat :Initialize;
+  :Execute;
+repeat while (Continue?)
+
+stop
+@enduml

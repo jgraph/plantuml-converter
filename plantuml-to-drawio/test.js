@@ -27,6 +27,12 @@ import {
 	NotePosition as UCNotePosition, DiagramDirection,
 	UsecaseElement, UsecaseRelationship, UsecaseContainer, UsecaseNote, UsecaseDiagram
 } from './diagrams/usecase/UsecaseModel.js';
+import { parseActivityDiagram } from './diagrams/activity/ActivityParser.js';
+import { emitActivityDiagram } from './diagrams/activity/ActivityEmitter.js';
+import {
+	InstructionType, NotePosition as ActNotePosition,
+	Instruction, SwimlaneDefinition, ActivityDiagram
+} from './diagrams/activity/ActivityModel.js';
 
 let passed = 0;
 let failed = 0;
@@ -1706,6 +1712,445 @@ usecase (Login)
 User --> (Login)`);
 	assert(ucType === 'usecase', 'Usecase still detected');
 	console.log('  Existing types unaffected: OK');
+}
+
+// ── Activity Parser Tests ────────────────────────────────────────────────
+
+section('Activity Parser');
+
+{
+	// Simple action
+	const d = parseActivityDiagram(':Hello World;');
+	assert(d.instructions.length === 1, 'Simple action: 1 instruction');
+	assert(d.instructions[0].type === InstructionType.ACTION, 'Simple action: type is ACTION');
+	assert(d.instructions[0].label === 'Hello World', 'Simple action: label is "Hello World"');
+	console.log('  Simple action: OK');
+}
+
+{
+	// Multiline action
+	const d = parseActivityDiagram(':line one\nline two;');
+	assert(d.instructions.length === 1, 'Multiline action: 1 instruction');
+	assert(d.instructions[0].type === InstructionType.ACTION, 'Multiline action: type is ACTION');
+	assert(d.instructions[0].label === 'line one\nline two', 'Multiline action: label has both lines');
+	console.log('  Multiline action: OK');
+}
+
+{
+	// Colored action
+	const d = parseActivityDiagram('#LightBlue:Colored action;');
+	assert(d.instructions.length === 1, 'Colored action: 1 instruction');
+	assert(d.instructions[0].color === '#LightBlue', 'Colored action: color is #LightBlue');
+	assert(d.instructions[0].label === 'Colored action', 'Colored action: label correct');
+	console.log('  Colored action: OK');
+}
+
+{
+	// Start and stop
+	const d = parseActivityDiagram('start\n:Do something;\nstop');
+	assert(d.instructions.length === 3, 'Start/stop: 3 instructions');
+	assert(d.instructions[0].type === InstructionType.START, 'Start/stop: first is START');
+	assert(d.instructions[1].type === InstructionType.ACTION, 'Start/stop: second is ACTION');
+	assert(d.instructions[2].type === InstructionType.STOP, 'Start/stop: third is STOP');
+	console.log('  Start and stop: OK');
+}
+
+{
+	// End
+	const d = parseActivityDiagram('start\n:Action;\nend');
+	assert(d.instructions[2].type === InstructionType.END, 'End: type is END');
+	console.log('  End: OK');
+}
+
+{
+	// Kill
+	const d = parseActivityDiagram('start\n:Action;\nkill');
+	assert(d.instructions[2].type === InstructionType.KILL, 'Kill: type is KILL');
+	console.log('  Kill: OK');
+}
+
+{
+	// Detach (synonym for kill)
+	const d = parseActivityDiagram('start\n:Action;\ndetach');
+	assert(d.instructions[2].type === InstructionType.KILL, 'Detach: type is KILL');
+	console.log('  Detach: OK');
+}
+
+{
+	// Arrow with label
+	const d = parseActivityDiagram('start\n-> Custom label;\n:Action;');
+	assert(d.instructions.length === 3, 'Arrow: 3 instructions (start, arrow, action)');
+	assert(d.instructions[1].type === InstructionType.ARROW, 'Arrow: type is ARROW');
+	assert(d.instructions[1].arrowLabel === 'Custom label', 'Arrow: label correct');
+	console.log('  Arrow with label: OK');
+}
+
+{
+	// Arrow with color
+	const d = parseActivityDiagram('-[#red]-> Styled;\n:Action;');
+	assert(d.instructions[0].type === InstructionType.ARROW, 'Colored arrow: type is ARROW');
+	assert(d.instructions[0].arrowColor === '#red', 'Colored arrow: color is #red');
+	assert(d.instructions[0].arrowLabel === 'Styled', 'Colored arrow: label correct');
+	console.log('  Arrow with color: OK');
+}
+
+{
+	// Title
+	const d = parseActivityDiagram('title My Activity\nstart\nstop');
+	assert(d.title === 'My Activity', 'Title: parsed correctly');
+	console.log('  Title: OK');
+}
+
+{
+	// If/then/else
+	const d = parseActivityDiagram(`if (test?) then (yes)
+  :Then action;
+else (no)
+  :Else action;
+endif`);
+	assert(d.instructions.length === 1, 'If: 1 top-level instruction');
+	const ifInstr = d.instructions[0];
+	assert(ifInstr.type === InstructionType.IF, 'If: type is IF');
+	assert(ifInstr.condition === 'test?', 'If: condition correct');
+	assert(ifInstr.thenLabel === 'yes', 'If: then label correct');
+	assert(ifInstr.elseLabel === 'no', 'If: else label correct');
+	assert(ifInstr.thenBranch.length === 1, 'If: then branch has 1 instruction');
+	assert(ifInstr.elseBranch.length === 1, 'If: else branch has 1 instruction');
+	assert(ifInstr.thenBranch[0].label === 'Then action', 'If: then action correct');
+	assert(ifInstr.elseBranch[0].label === 'Else action', 'If: else action correct');
+	console.log('  If/then/else: OK');
+}
+
+{
+	// ElseIf
+	const d = parseActivityDiagram(`if (A?) then (yes)
+  :Branch A;
+elseif (B?) then (yes)
+  :Branch B;
+else (no)
+  :Branch C;
+endif`);
+	const ifInstr = d.instructions[0];
+	assert(ifInstr.type === InstructionType.IF, 'ElseIf: type is IF');
+	assert(ifInstr.thenBranch.length === 1, 'ElseIf: then branch has 1');
+	assert(ifInstr.elseIfBranches.length === 1, 'ElseIf: 1 elseif branch');
+	assert(ifInstr.elseIfBranches[0].condition === 'B?', 'ElseIf: condition correct');
+	assert(ifInstr.elseBranch.length === 1, 'ElseIf: else branch has 1');
+	console.log('  ElseIf: OK');
+}
+
+{
+	// Nested if
+	const d = parseActivityDiagram(`if (outer?) then (yes)
+  if (inner?) then (yes)
+    :Inner action;
+  endif
+endif`);
+	const outer = d.instructions[0];
+	assert(outer.type === InstructionType.IF, 'Nested if: outer is IF');
+	assert(outer.thenBranch.length === 1, 'Nested if: then has 1');
+	const inner = outer.thenBranch[0];
+	assert(inner.type === InstructionType.IF, 'Nested if: inner is IF');
+	assert(inner.thenBranch.length === 1, 'Nested if: inner then has 1');
+	console.log('  Nested if: OK');
+}
+
+// ── Activity Parser — Tier 2 ───────────────────────────────────────────
+
+section('Activity Parser — Tier 2');
+
+{
+	// While loop
+	const d = parseActivityDiagram(`while (more data?) is (yes)
+  :Process data;
+endwhile (no)`);
+	assert(d.instructions.length === 1, 'While: 1 instruction');
+	const w = d.instructions[0];
+	assert(w.type === InstructionType.WHILE, 'While: type is WHILE');
+	assert(w.whileCondition === 'more data?', 'While: condition correct');
+	assert(w.whileYesLabel === 'yes', 'While: yes label correct');
+	assert(w.whileNoLabel === 'no', 'While: no label correct');
+	assert(w.whileBody.length === 1, 'While: body has 1 instruction');
+	console.log('  While loop: OK');
+}
+
+{
+	// Repeat loop
+	const d = parseActivityDiagram(`repeat
+  :Process;
+repeat while (again?) is (yes) not (done)`);
+	assert(d.instructions.length === 1, 'Repeat: 1 instruction');
+	const r = d.instructions[0];
+	assert(r.type === InstructionType.REPEAT, 'Repeat: type is REPEAT');
+	assert(r.repeatBody.length === 1, 'Repeat: body has 1 instruction');
+	assert(r.repeatCondition === 'again?', 'Repeat: condition correct');
+	assert(r.repeatYesLabel === 'yes', 'Repeat: yes label correct');
+	assert(r.repeatNoLabel === 'done', 'Repeat: no label correct');
+	console.log('  Repeat loop: OK');
+}
+
+{
+	// Repeat with start label
+	const d = parseActivityDiagram(`repeat :Initialize;
+  :Process;
+repeat while (again?)`);
+	const r = d.instructions[0];
+	assert(r.repeatStartLabel === 'Initialize', 'Repeat start label: correct');
+	console.log('  Repeat with start label: OK');
+}
+
+{
+	// Switch/case
+	const d = parseActivityDiagram(`switch (status?)
+case (Active)
+  :Handle active;
+case (Pending)
+  :Handle pending;
+case (Closed)
+  :Handle closed;
+endswitch`);
+	assert(d.instructions.length === 1, 'Switch: 1 instruction');
+	const s = d.instructions[0];
+	assert(s.type === InstructionType.SWITCH, 'Switch: type is SWITCH');
+	assert(s.switchCondition === 'status?', 'Switch: condition correct');
+	assert(s.switchCases.length === 3, 'Switch: 3 cases');
+	assert(s.switchCases[0].label === 'Active', 'Switch: case 1 label correct');
+	assert(s.switchCases[1].label === 'Pending', 'Switch: case 2 label correct');
+	assert(s.switchCases[2].label === 'Closed', 'Switch: case 3 label correct');
+	assert(s.switchCases[0].instructions.length === 1, 'Switch: case 1 has 1 instruction');
+	console.log('  Switch/case: OK');
+}
+
+{
+	// Break
+	const d = parseActivityDiagram(`while (test?)
+  :Action;
+  break
+endwhile`);
+	const w = d.instructions[0];
+	assert(w.whileBody.length === 2, 'Break: body has 2 instructions');
+	assert(w.whileBody[1].type === InstructionType.BREAK, 'Break: type is BREAK');
+	console.log('  Break: OK');
+}
+
+// ── Activity Parser — Tier 3 ───────────────────────────────────────────
+
+section('Activity Parser — Tier 3');
+
+{
+	// Fork/join
+	const d = parseActivityDiagram(`fork
+  :Branch A;
+fork again
+  :Branch B;
+fork again
+  :Branch C;
+end fork`);
+	assert(d.instructions.length === 1, 'Fork: 1 instruction');
+	const f = d.instructions[0];
+	assert(f.type === InstructionType.FORK, 'Fork: type is FORK');
+	assert(f.branches.length === 3, 'Fork: 3 branches');
+	assert(f.branches[0].length === 1, 'Fork: branch 1 has 1 instruction');
+	assert(f.branches[1].length === 1, 'Fork: branch 2 has 1 instruction');
+	assert(f.branches[2].length === 1, 'Fork: branch 3 has 1 instruction');
+	console.log('  Fork/join: OK');
+}
+
+{
+	// Split
+	const d = parseActivityDiagram(`split
+  :Path A;
+split again
+  :Path B;
+end split`);
+	assert(d.instructions.length === 1, 'Split: 1 instruction');
+	const s = d.instructions[0];
+	assert(s.type === InstructionType.SPLIT, 'Split: type is SPLIT');
+	assert(s.branches.length === 2, 'Split: 2 branches');
+	console.log('  Split: OK');
+}
+
+{
+	// Partition
+	const d = parseActivityDiagram(`partition "Business Logic" {
+  :Inside partition;
+  :More logic;
+}`);
+	assert(d.instructions.length === 1, 'Partition: 1 instruction');
+	const p = d.instructions[0];
+	assert(p.type === InstructionType.PARTITION, 'Partition: type is PARTITION');
+	assert(p.partitionName === 'Business Logic', 'Partition: name correct');
+	assert(p.partitionBody.length === 2, 'Partition: body has 2 instructions');
+	console.log('  Partition: OK');
+}
+
+{
+	// Partition with color
+	const d = parseActivityDiagram(`partition #LightGreen "Colored" {
+  :Action;
+}`);
+	const p = d.instructions[0];
+	assert(p.partitionColor === '#LightGreen', 'Partition color: correct');
+	console.log('  Partition with color: OK');
+}
+
+{
+	// Swimlane
+	const d = parseActivityDiagram(`|Swimlane A|
+:Action in A;
+|Swimlane B|
+:Action in B;`);
+	assert(d.swimlanes.size === 2, 'Swimlane: 2 lanes');
+	assert(d.swimlanes.has('Swimlane A'), 'Swimlane: has "Swimlane A"');
+	assert(d.swimlanes.has('Swimlane B'), 'Swimlane: has "Swimlane B"');
+	assert(d.instructions[0].swimlane === 'Swimlane A', 'Swimlane: first action in lane A');
+	assert(d.instructions[1].swimlane === 'Swimlane B', 'Swimlane: second action in lane B');
+	console.log('  Swimlanes: OK');
+}
+
+{
+	// Note single-line
+	const d = parseActivityDiagram('note right: This is a note');
+	assert(d.instructions.length === 1, 'Note: 1 instruction');
+	const n = d.instructions[0];
+	assert(n.type === InstructionType.NOTE, 'Note: type is NOTE');
+	assert(n.notePosition === ActNotePosition.RIGHT, 'Note: position is RIGHT');
+	assert(n.noteText === 'This is a note', 'Note: text correct');
+	assert(n.noteFloating === false, 'Note: not floating');
+	console.log('  Note single-line: OK');
+}
+
+{
+	// Note multiline
+	const d = parseActivityDiagram(`note left
+  Line 1
+  Line 2
+end note`);
+	assert(d.instructions.length === 1, 'Multiline note: 1 instruction');
+	const n = d.instructions[0];
+	assert(n.type === InstructionType.NOTE, 'Multiline note: type is NOTE');
+	assert(n.notePosition === ActNotePosition.LEFT, 'Multiline note: position is LEFT');
+	assert(n.noteText.includes('Line 1'), 'Multiline note: contains Line 1');
+	assert(n.noteText.includes('Line 2'), 'Multiline note: contains Line 2');
+	console.log('  Note multiline: OK');
+}
+
+{
+	// Floating note
+	const d = parseActivityDiagram('floating note right: Floating');
+	const n = d.instructions[0];
+	assert(n.noteFloating === true, 'Floating note: is floating');
+	console.log('  Floating note: OK');
+}
+
+// ── Activity Emitter Tests ──────────────────────────────────────────────
+
+section('Activity Emitter');
+
+{
+	// Basic action emission
+	const d = parseActivityDiagram(':Hello;');
+	const cells = emitActivityDiagram(d, 'test-parent');
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('vertex="1"'), 'Action emit: has vertex');
+	assert(cellStr.includes('rounded=1'), 'Action emit: has rounded style');
+	assert(cellStr.includes('Hello'), 'Action emit: has label');
+	console.log('  Action emission: OK');
+}
+
+{
+	// Start circle emission
+	const d = parseActivityDiagram('start');
+	const cells = emitActivityDiagram(d, 'test-parent');
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('ellipse'), 'Start emit: has ellipse style');
+	assert(cellStr.includes('fillColor=#000000'), 'Start emit: black fill');
+	console.log('  Start circle emission: OK');
+}
+
+{
+	// Diamond for if
+	const d = parseActivityDiagram('if (test?) then (yes)\n  :Action;\nendif');
+	const cells = emitActivityDiagram(d, 'test-parent');
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('rhombus'), 'If emit: has diamond (rhombus)');
+	assert(cellStr.includes('edge="1"'), 'If emit: has edges');
+	console.log('  Diamond for if: OK');
+}
+
+{
+	// Edge between sequential actions
+	const d = parseActivityDiagram('start\n:Action;\nstop');
+	const cells = emitActivityDiagram(d, 'test-parent');
+	const cellStr = cells.join('\n');
+	const edgeCount = (cellStr.match(/edge="1"/g) || []).length;
+	assert(edgeCount >= 2, 'Sequential edges: at least 2 edges (start->action, action->stop)');
+	console.log('  Edges between sequential actions: OK');
+}
+
+{
+	// Fork bars
+	const d = parseActivityDiagram('fork\n  :A;\nfork again\n  :B;\nend fork');
+	const cells = emitActivityDiagram(d, 'test-parent');
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('fillColor=#000000'), 'Fork emit: has black bars');
+	const vertexCount = (cellStr.match(/vertex="1"/g) || []).length;
+	assert(vertexCount >= 4, 'Fork emit: at least 4 vertices (2 bars + 2 actions)');
+	console.log('  Fork bars emission: OK');
+}
+
+// ── Activity Pipeline Tests ─────────────────────────────────────────────
+
+section('Activity Pipeline');
+
+{
+	// Full conversion
+	const result = convert('start\n:Hello World;\nstop');
+	assert(result.diagramType === 'activity', 'Pipeline: detected as activity');
+	assert(result.xml.includes('<mxfile>'), 'Pipeline: has mxfile wrapper');
+	assert(result.xml.includes('Hello World'), 'Pipeline: contains label');
+	console.log('  Basic conversion: OK');
+}
+
+{
+	// Type detection
+	const type = detectDiagramType('start\n:Action;\nstop');
+	assert(type === 'activity', 'Detection: simple activity detected');
+	console.log('  Type detection: OK');
+}
+
+{
+	// Explicit @startactivity
+	const type = detectDiagramType('@startactivity\n:Action;\nstop');
+	assert(type === 'activity', 'Detection: @startactivity detected');
+	console.log('  @startactivity detection: OK');
+}
+
+{
+	// No collision with existing types
+	const seqType = detectDiagramType('Alice -> Bob : hello');
+	assert(seqType === 'sequence', 'No collision: sequence still detected');
+	const classType = detectDiagramType('class Foo\nclass Bar\nFoo <|-- Bar');
+	assert(classType === 'class', 'No collision: class still detected');
+	const ucType = detectDiagramType('@startusecase\nactor User\nusecase (Login)\nUser --> (Login)');
+	assert(ucType === 'usecase', 'No collision: usecase still detected');
+	console.log('  No collision with existing types: OK');
+}
+
+{
+	// Activity with if/else converted
+	const result = convert(`start
+if (condition?) then (yes)
+  :True path;
+else (no)
+  :False path;
+endif
+stop`);
+	assert(result.diagramType === 'activity', 'If pipeline: detected as activity');
+	assert(result.xml.includes('rhombus'), 'If pipeline: has diamond');
+	assert(result.xml.includes('True path'), 'If pipeline: has then label');
+	assert(result.xml.includes('False path'), 'If pipeline: has else label');
+	console.log('  If/else conversion: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

@@ -13,10 +13,11 @@
  * Currently supports:
  *   - Class diagrams
  *   - Usecase diagrams
+ *   - Activity diagrams
  *   - Sequence diagrams
  *
- * Designed to be extended with additional diagram types (class, activity,
- * component, etc.) by registering new handler entries.
+ * Designed to be extended with additional diagram types (component,
+ * state, etc.) by registering new handler entries.
  */
 
 import { parseSequenceDiagram } from './diagrams/sequence/SequenceParser.js';
@@ -25,6 +26,8 @@ import { parseClassDiagram } from './diagrams/class/ClassParser.js';
 import { emitClassDiagram } from './diagrams/class/ClassEmitter.js';
 import { parseUsecaseDiagram } from './diagrams/usecase/UsecaseParser.js';
 import { emitUsecaseDiagram } from './diagrams/usecase/UsecaseEmitter.js';
+import { parseActivityDiagram } from './diagrams/activity/ActivityParser.js';
+import { emitActivityDiagram } from './diagrams/activity/ActivityEmitter.js';
 import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.js';
 
 // ── Diagram type registry ──────────────────────────────────────────────────
@@ -98,6 +101,50 @@ diagramHandlers.set('usecase', {
 	},
 	parse: parseUsecaseDiagram,
 	emit: emitUsecaseDiagram
+});
+
+// Register activity diagram handler (before sequence — sequence's heuristic is broad
+// and would match activity diagrams containing -> arrows)
+diagramHandlers.set('activity', {
+	detect(text) {
+		// Explicit @startactivity
+		if (/@startactivity\b/i.test(text)) return true;
+
+		const lines = text.split('\n');
+		let activityKeywords = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			// Activity syntax: :label;
+			if (/^(?:#\w+\s*)?:.+;$/.test(trimmed)) activityKeywords++;
+			// Start/stop
+			if (/^start\s*$/i.test(trimmed)) activityKeywords++;
+			if (/^stop\s*$/i.test(trimmed)) activityKeywords++;
+			// If/endif
+			if (/^if\s*\(/i.test(trimmed)) activityKeywords++;
+			if (/^end\s*if\s*$/i.test(trimmed) || /^endif\s*$/i.test(trimmed)) activityKeywords++;
+			// While/endwhile
+			if (/^while\s*\(/i.test(trimmed)) activityKeywords++;
+			if (/^end\s*while/i.test(trimmed) || /^endwhile/i.test(trimmed)) activityKeywords++;
+			// Repeat
+			if (/^repeat\s*(?:\s|$|:)/i.test(trimmed)) activityKeywords++;
+			// Fork
+			if (/^fork\s*;?\s*$/i.test(trimmed)) activityKeywords++;
+			// Partition
+			if (/^partition\s+/i.test(trimmed)) activityKeywords++;
+			// Swimlane
+			if (/^\|[^|]+\|/.test(trimmed)) activityKeywords++;
+			// Switch
+			if (/^switch\s*\(/i.test(trimmed)) activityKeywords++;
+			// Kill/detach
+			if (/^(?:kill|detach)\s*$/i.test(trimmed)) activityKeywords++;
+		}
+
+		// Require at least 2 activity-specific patterns to avoid false positives
+		return activityKeywords >= 2;
+	},
+	parse: parseActivityDiagram,
+	emit: emitActivityDiagram
 });
 
 // Register sequence diagram handler

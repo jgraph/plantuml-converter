@@ -1,0 +1,20 @@
+@startuml
+start
+
+while (Has items?) is (yes)
+  :Process item;
+endwhile (done)
+
+while (Simple condition?)
+  :Action;
+endwhile
+
+while (Nested?) is (yes)
+  :Outer body;
+  while (Inner?) is (yes)
+    :Inner body;
+  endwhile (done)
+endwhile (done)
+
+stop
+@enduml

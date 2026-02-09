@@ -1,0 +1,36 @@
+@startuml
+start
+
+while (Processing?) is (yes)
+  if (Type A?) then (yes)
+    :Handle A;
+  elseif (Type B?) then (yes)
+    :Handle B;
+  else (other)
+    :Handle default;
+  endif
+endwhile (done)
+
+fork
+  partition "Thread 1" {
+    :Task 1A;
+    :Task 1B;
+  }
+fork again
+  partition "Thread 2" {
+    :Task 2A;
+    if (Condition?) then (yes)
+      :Task 2B;
+    endif
+  }
+end fork
+
+repeat
+  :Loop step;
+  if (Skip?) then (yes)
+    break
+  endif
+repeat while (Continue?)
+
+stop
+@enduml

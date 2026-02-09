@@ -1,0 +1,91 @@
+@startuml
+title Comprehensive Activity Diagram
+
+start
+
+:Simple action;
+
+:Multiline
+action text;
+
+#LightBlue:Colored action;
+
+-> Custom arrow label;
+:After arrow;
+
+-[#red]-> Red arrow;
+:After red arrow;
+
+if (Condition A?) then (yes)
+  :Then branch;
+elseif (Condition B?) then (also yes)
+  :ElseIf branch;
+else (no)
+  :Else branch;
+endif
+
+if (Simple?) then (yes)
+  :Only then;
+endif
+
+while (More data?) is (yes)
+  :Process data;
+  if (Valid?) then (yes)
+    :Accept;
+  else (no)
+    :Reject;
+  endif
+endwhile (no)
+
+repeat
+  :Repeat action;
+  :Another repeat step;
+repeat while (Again?) is (yes) not (done)
+
+repeat :Initialize;
+  :Process step;
+repeat while (Continue?)
+
+switch (Status?)
+case (Active)
+  :Handle active;
+case (Pending)
+  :Handle pending;
+case (Closed)
+  :Handle closed;
+endswitch
+
+fork
+  :Branch A;
+fork again
+  :Branch B;
+fork again
+  :Branch C;
+end fork
+
+split
+  :Path 1;
+split again
+  :Path 2;
+end split
+
+partition "Business Logic" {
+  :Inside partition;
+  :More logic;
+}
+
+partition #LightGreen "Colored Partition" {
+  :Green action;
+}
+
+note right
+  This is a
+  multiline note
+end note
+
+note left: Single-line note
+
+:Final action;
+
+stop
+@enduml

@@ -1,0 +1,20 @@
+@startuml
+start
+
+fork
+  :Task A;
+fork again
+  :Task B;
+end fork
+
+fork
+  :Branch 1;
+  :Branch 1 cont;
+fork again
+  :Branch 2;
+fork again
+  :Branch 3;
+end fork
+
+stop
+@enduml

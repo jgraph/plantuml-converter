@@ -1,0 +1,35 @@
+@startuml
+start
+
+if (Simple?) then (yes)
+  :Then only;
+endif
+
+if (Binary?) then (yes)
+  :True path;
+else (no)
+  :False path;
+endif
+
+if (A?) then (yes)
+  :Branch A;
+elseif (B?) then (yes)
+  :Branch B;
+elseif (C?) then (yes)
+  :Branch C;
+else (no)
+  :Default;
+endif
+
+if (Outer?) then (yes)
+  if (Inner?) then (yes)
+    :Deep action;
+  else (no)
+    :Other deep;
+  endif
+else (no)
+  :Outer else;
+endif
+
+stop
+@enduml

@@ -1,0 +1,420 @@
+<mxfile>
+  <diagram name="PlantUML Import">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <UserObject label="" plantUml="@startuml
+title Comprehensive Activity Diagram
+
+start
+
+:Simple action;
+
+:Multiline
+action text;
+
+#LightBlue:Colored action;
+
+-&gt; Custom arrow label;
+:After arrow;
+
+-[#red]-&gt; Red arrow;
+:After red arrow;
+
+if (Condition A?) then (yes)
+  :Then branch;
+elseif (Condition B?) then (also yes)
+  :ElseIf branch;
+else (no)
+  :Else branch;
+endif
+
+if (Simple?) then (yes)
+  :Only then;
+endif
+
+while (More data?) is (yes)
+  :Process data;
+  if (Valid?) then (yes)
+    :Accept;
+  else (no)
+    :Reject;
+  endif
+endwhile (no)
+
+repeat
+  :Repeat action;
+  :Another repeat step;
+repeat while (Again?) is (yes) not (done)
+
+repeat :Initialize;
+  :Process step;
+repeat while (Continue?)
+
+switch (Status?)
+case (Active)
+  :Handle active;
+case (Pending)
+  :Handle pending;
+case (Closed)
+  :Handle closed;
+endswitch
+
+fork
+  :Branch A;
+fork again
+  :Branch B;
+fork again
+  :Branch C;
+end fork
+
+split
+  :Path 1;
+split again
+  :Path 2;
+end split
+
+partition &quot;Business Logic&quot; {
+  :Inside partition;
+  :More logic;
+}
+
+partition #LightGreen &quot;Colored Partition&quot; {
+  :Green action;
+}
+
+note right
+  This is a
+  multiline note
+end note
+
+note left: Single-line note
+
+:Final action;
+
+stop
+@enduml
+" id="puml-grp-1">
+  <mxCell style="group;editable=0;connectable=0;" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="800" height="600" as="geometry"/>
+  </mxCell>
+</UserObject>
+<mxCell id="puml-1" style="ellipse=;fillColor=#000000;strokeColor=#000000;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="275" y="40" width="30" height="30" as="geometry"/>
+</mxCell>
+<mxCell id="puml-2" value="Simple action" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="100" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-3" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-1" target="puml-2">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-4" value="Multiline
+action text" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="170" width="140" height="60" as="geometry"/>
+</mxCell>
+<mxCell id="puml-5" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-2" target="puml-4">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-6" value="Colored action" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#ADD8E6;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="260" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-7" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-4" target="puml-6">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-8" value="After arrow" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="330" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-9" value="Custom arrow label" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-6" target="puml-8">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-10" value="After red arrow" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="400" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-11" value="Red arrow" style="html=1;rounded=0;endArrow=block;endFill=1;strokeColor=#FF0000;" edge="1" parent="puml-grp-1" source="puml-8" target="puml-10">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-12" value="Condition A?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="470" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-13" style="rhombus=;fillColor=#FFFDE7;strokeColor=#FBC02D;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="280" y="750" width="20" height="20" as="geometry"/>
+</mxCell>
+<mxCell id="puml-14" value="Then branch" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="130" y="540" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-15" value="yes" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-12" target="puml-14">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-16" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-14" target="puml-13">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-17" value="Else branch" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="310" y="540" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-18" value="no" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-12" target="puml-17">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-19" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-17" target="puml-13">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-20" value="Condition B?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="360" y="610" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-21" value="no" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-12" target="puml-20">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-22" value="ElseIf branch" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="310" y="680" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-23" value="also yes" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-20" target="puml-22">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-24" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-22" target="puml-13">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-25" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-10" target="puml-12">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-26" value="Simple?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="800" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-27" style="rhombus=;fillColor=#FFFDE7;strokeColor=#FBC02D;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="280" y="940" width="20" height="20" as="geometry"/>
+</mxCell>
+<mxCell id="puml-28" value="Only then" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="130" y="870" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-29" value="yes" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-26" target="puml-28">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-30" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-28" target="puml-27">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-31" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-26" target="puml-27">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-32" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-13" target="puml-26">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-33" value="More data?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="990" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-34" value="Process data" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="1060" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-35" value="Valid?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="1130" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-36" style="rhombus=;fillColor=#FFFDE7;strokeColor=#FBC02D;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="280" y="1270" width="20" height="20" as="geometry"/>
+</mxCell>
+<mxCell id="puml-37" value="Accept" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="130" y="1200" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-38" value="yes" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-35" target="puml-37">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-39" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-37" target="puml-36">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-40" value="Reject" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="310" y="1200" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-41" value="no" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-35" target="puml-40">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-42" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-40" target="puml-36">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-43" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-34" target="puml-35">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-44" value="yes" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-33" target="puml-34">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-45" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-36" target="puml-33">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-46" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-27" target="puml-33">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-47" value="Repeat action" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="1350" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-48" value="Another repeat step" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="208.5" y="1420" width="163" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-49" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-47" target="puml-48">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-50" value="Again?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="1490" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-51" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-48" target="puml-50">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-52" value="yes" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-50" target="puml-47">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-53" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-33" target="puml-47">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-54" value="Process step" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="1590" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-55" value="Continue?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="1660" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-56" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-54" target="puml-55">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-57" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-55" target="puml-54">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-58" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-50" target="puml-54">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-59" value="Status?" style="rhombus=;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#FBC02D;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="270" y="1760" width="40" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-60" style="rhombus=;fillColor=#FFFDE7;strokeColor=#FBC02D;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="280" y="1900" width="20" height="20" as="geometry"/>
+</mxCell>
+<mxCell id="puml-61" value="Handle active" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="40" y="1830" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-62" value="Active" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-59" target="puml-61">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-63" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-61" target="puml-60">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-64" value="Handle pending" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="1830" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-65" value="Pending" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-59" target="puml-64">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-66" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-64" target="puml-60">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-67" value="Handle closed" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="400" y="1830" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-68" value="Closed" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-59" target="puml-67">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-69" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-67" target="puml-60">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-70" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-55" target="puml-59">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-71" style="fillColor=#000000;strokeColor=#000000;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="40" y="1950" width="500" height="6" as="geometry"/>
+</mxCell>
+<mxCell id="puml-72" style="fillColor=#000000;strokeColor=#000000;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="40" y="2056" width="500" height="6" as="geometry"/>
+</mxCell>
+<mxCell id="puml-73" value="Branch A" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="40" y="1986" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-74" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-71" target="puml-73">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-75" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-73" target="puml-72">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-76" value="Branch B" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="1986" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-77" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-71" target="puml-76">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-78" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-76" target="puml-72">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-79" value="Branch C" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="400" y="1986" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-80" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-71" target="puml-79">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-81" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-79" target="puml-72">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-82" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-60" target="puml-71">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-83" style="fillColor=#000000;strokeColor=#000000;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="130" y="2092" width="320" height="6" as="geometry"/>
+</mxCell>
+<mxCell id="puml-84" style="fillColor=#000000;strokeColor=#000000;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="130" y="2198" width="320" height="6" as="geometry"/>
+</mxCell>
+<mxCell id="puml-85" value="Path 1" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="130" y="2128" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-86" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-83" target="puml-85">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-87" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-85" target="puml-84">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-88" value="Path 2" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="310" y="2128" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-89" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-83" target="puml-88">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-90" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-88" target="puml-84">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-91" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-72" target="puml-83">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-92" value="Business Logic" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=none;strokeColor=#666666;dashed=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="199" y="2234" width="182" height="155" as="geometry"/>
+</mxCell>
+<mxCell id="puml-93" value="Inside partition" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="219" y="2259" width="142" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-94" value="More logic" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="2329" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-95" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-93" target="puml-94">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-96" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-84" target="puml-93">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-97" value="Colored Partition" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#90EE90;strokeColor=#666666;dashed=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="200" y="2419" width="180" height="85" as="geometry"/>
+</mxCell>
+<mxCell id="puml-98" value="Green action" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="2444" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-99" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-94" target="puml-98">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="puml-100" value="  This is a
+  multiline note" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=4;fillColor=#FFF2CC;strokeColor=#D6B656;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="380" y="2534" width="140" height="48" as="geometry"/>
+</mxCell>
+<mxCell id="puml-101" value="Single-line note" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=4;fillColor=#FFF2CC;strokeColor=#D6B656;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="60" y="2612" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-102" value="Final action" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="220" y="2682" width="140" height="40" as="geometry"/>
+</mxCell>
+<mxCell id="puml-103" style="shape=doubleCircle;fillColor=#000000;strokeColor=#000000;html=1;" vertex="1" parent="puml-grp-1">
+    <mxGeometry x="275" y="2752" width="30" height="30" as="geometry"/>
+</mxCell>
+<mxCell id="puml-104" style="html=1;rounded=0;endArrow=block;endFill=1;" edge="1" parent="puml-grp-1" source="puml-102" target="puml-103">
+    <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

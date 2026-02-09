@@ -1,0 +1,24 @@
+@startuml
+start
+
+switch (Test?)
+case (A)
+  :Handle A;
+case (B)
+  :Handle B;
+endswitch
+
+switch (Status?)
+case (Active)
+  :Process active;
+  :More processing;
+case (Pending)
+  :Wait;
+case (Closed)
+  :Archive;
+case (Error)
+  :Log error;
+endswitch
+
+stop
+@enduml

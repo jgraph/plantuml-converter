@@ -1,0 +1,19 @@
+@startuml
+start
+
+split
+  :Path A;
+split again
+  :Path B;
+end split
+
+split
+  :Option 1;
+split again
+  :Option 2;
+split again
+  :Option 3;
+end split
+
+stop
+@enduml

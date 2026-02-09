@@ -1,0 +1,22 @@
+@startuml
+|Customer|
+start
+:Submit order;
+
+|Sales|
+:Review order;
+if (Approved?) then (yes)
+  :Process order;
+else (no)
+  |Customer|
+  :Revise order;
+endif
+
+|Warehouse|
+:Pack items;
+:Ship order;
+
+|Customer|
+:Receive order;
+stop
+@enduml
