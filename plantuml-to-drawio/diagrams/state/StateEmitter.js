@@ -42,7 +42,7 @@ const L = Object.freeze({
 	FINAL_OUTER_SIZE:    28,
 	FINAL_INNER_SIZE:    16,
 	DIAMOND_SIZE:        30,
-	BAR_WIDTH:           60,
+	BAR_WIDTH:           120,
 	BAR_HEIGHT:           5,
 	HISTORY_SIZE:        28,
 	NOTE_WIDTH:         140,
@@ -50,7 +50,7 @@ const L = Object.freeze({
 	NOTE_LINE_HEIGHT:    16,
 	NOTE_OFFSET:        160,
 	H_GAP:               60,
-	V_GAP:               40,
+	V_GAP:               60,
 	COMPOSITE_PAD:       20,
 	COMPOSITE_HEADER:    30,
 	MARGIN:              40,
@@ -370,9 +370,10 @@ class StateEmitter {
 
 	_measureConcurrentComposite(code) {
 		const el = this.diagram.elements.get(code);
-		let totalW = 0;
-		let totalH = 0;
+		const isSideBySide = this._isSideBySide(el);
 
+		// Measure each region
+		const regionSizes = [];
 		for (const region of el.concurrentRegions) {
 			let regionW = 0;
 			let regionH = 0;
@@ -387,8 +388,25 @@ class StateEmitter {
 				regionH -= L.V_GAP;
 			}
 
-			totalW = Math.max(totalW, regionW);
-			totalH += regionH + L.CONCURRENT_SEP;
+			regionSizes.push({ width: regionW, height: regionH });
+		}
+
+		let totalW = 0;
+		let totalH = 0;
+
+		if (isSideBySide) {
+			// Side-by-side: width = sum of regions + gaps, height = max region height
+			for (const rs of regionSizes) {
+				totalW += rs.width + L.H_GAP;
+				totalH = Math.max(totalH, rs.height);
+			}
+			if (regionSizes.length > 0) totalW -= L.H_GAP;
+		} else {
+			// Stacked: width = max region width, height = sum of regions + separators
+			for (const rs of regionSizes) {
+				totalW = Math.max(totalW, rs.width);
+				totalH += rs.height + L.CONCURRENT_SEP;
+			}
 		}
 
 		const titleLen = el.displayName.length;
@@ -398,6 +416,14 @@ class StateEmitter {
 		const height = L.COMPOSITE_HEADER + totalH + L.COMPOSITE_PAD;
 
 		return { width, height };
+	}
+
+	_isSideBySide(el) {
+		// Check separator type — || means side-by-side, -- means stacked
+		for (let i = 1; i < el.concurrentRegions.length; i++) {
+			if (el.concurrentRegions[i].separator === '|') return true;
+		}
+		return false;
 	}
 
 	// ── Place pass ───────────────────────────────────────────────────────────
@@ -433,11 +459,49 @@ class StateEmitter {
 			}
 		}
 
-		// Assign layers via topological sort (Kahn's algorithm)
-		// Only forward edges affect layer assignment; back-edges are ignored
+		// Transitive reduction: remove skip edges (A→D when A→B→...→D exists)
+		// This prevents long forward edges from stretching the layering
+		const reduced = new Map();
+		for (const code of topLevel) reduced.set(code, []);
+
+		for (const [src, targets] of adj) {
+			const reachable = new Set();
+			// For each target, find what's reachable through OTHER targets
+			for (const t of targets) {
+				const stack = [t];
+				const seen = new Set();
+				while (stack.length > 0) {
+					const n = stack.pop();
+					for (const next of (adj.get(n) || [])) {
+						if (seen.has(next) === false) {
+							seen.add(next);
+							reachable.add(next);
+							stack.push(next);
+						}
+					}
+				}
+			}
+			// Keep only targets not reachable via other targets
+			for (const t of targets) {
+				if (reachable.has(t) === false) {
+					reduced.get(src).push(t);
+				}
+			}
+		}
+
+		// Recompute in-degree from reduced edges
+		const reducedInDeg = new Map();
+		for (const code of topLevel) reducedInDeg.set(code, 0);
+		for (const [, targets] of reduced) {
+			for (const t of targets) {
+				reducedInDeg.set(t, (reducedInDeg.get(t) || 0) + 1);
+			}
+		}
+
+		// Assign layers via topological sort (Kahn's algorithm) on reduced graph
 		const layer = new Map();
 		const deg = new Map();
-		for (const code of topLevel) deg.set(code, inDegree.get(code) || 0);
+		for (const code of topLevel) deg.set(code, reducedInDeg.get(code) || 0);
 
 		const topoQueue = topLevel.filter(c => deg.get(c) === 0);
 		if (topoQueue.length === 0 && topLevel.length > 0) {
@@ -455,8 +519,8 @@ class StateEmitter {
 			visited.add(code);
 			const currentLayer = layer.get(code) || 0;
 
-			for (const next of (adj.get(code) || [])) {
-				if (visited.has(next)) continue; // skip back-edges
+			for (const next of (reduced.get(code) || [])) {
+				if (visited.has(next)) continue;
 				const nextLayer = Math.max(layer.get(next) || 0, currentLayer + 1);
 				layer.set(next, nextLayer);
 				const newDeg = (deg.get(next) || 1) - 1;
@@ -579,7 +643,16 @@ class StateEmitter {
 	_placeConcurrentChildren(code) {
 		const el = this.diagram.elements.get(code);
 		const pos = this.posMap.get(code);
+		const isSideBySide = this._isSideBySide(el);
 
+		if (isSideBySide) {
+			this._placeConcurrentSideBySide(el, pos);
+		} else {
+			this._placeConcurrentStacked(el, pos);
+		}
+	}
+
+	_placeConcurrentStacked(el, pos) {
 		let cy = pos.y + L.COMPOSITE_HEADER + L.COMPOSITE_PAD;
 		const cx = pos.x + L.COMPOSITE_PAD;
 		const innerW = pos.w - L.COMPOSITE_PAD * 2;
@@ -603,6 +676,35 @@ class StateEmitter {
 			}
 
 			cy += L.CONCURRENT_SEP;
+		}
+	}
+
+	_placeConcurrentSideBySide(el, pos) {
+		let cx = pos.x + L.COMPOSITE_PAD;
+		const startY = pos.y + L.COMPOSITE_HEADER + L.COMPOSITE_PAD;
+
+		for (const region of el.concurrentRegions) {
+			let cy = startY;
+			let maxW = 0;
+
+			for (const childCode of region.elements) {
+				const childSize = this.sizeMap.get(childCode);
+				if (childSize == null) continue;
+
+				this.posMap.set(childCode, {
+					x: cx,
+					y: cy,
+					w: childSize.width,
+					h: childSize.height,
+				});
+
+				cy += childSize.height + L.V_GAP;
+				if (childSize.width > maxW) maxW = childSize.width;
+
+				this._placeChildren(childCode);
+			}
+
+			cx += maxW + L.H_GAP;
 		}
 	}
 
@@ -674,7 +776,16 @@ class StateEmitter {
 		const pos = this.posMap.get(code);
 		if (pos == null || el.concurrentRegions.length < 2) return;
 
-		// Calculate approximate y positions for separators between regions
+		const isSideBySide = this._isSideBySide(el);
+
+		if (isSideBySide) {
+			this._emitVerticalSeparators(el, pos);
+		} else {
+			this._emitHorizontalSeparators(el, pos);
+		}
+	}
+
+	_emitHorizontalSeparators(el, pos) {
 		let cy = pos.y + L.COMPOSITE_HEADER + L.COMPOSITE_PAD;
 
 		for (let i = 0; i < el.concurrentRegions.length - 1; i++) {
@@ -688,7 +799,6 @@ class StateEmitter {
 
 			cy += regionH + L.V_GAP;
 
-			// Emit dashed line
 			const sepId = this.nextId();
 			this.cells.push(buildCell({
 				id: sepId,
@@ -706,6 +816,42 @@ class StateEmitter {
 			}));
 
 			cy += L.CONCURRENT_SEP;
+		}
+	}
+
+	_emitVerticalSeparators(el, pos) {
+		// Place vertical dashed lines between side-by-side regions
+		let cx = pos.x + L.COMPOSITE_PAD;
+		const topY = pos.y + L.COMPOSITE_HEADER + 5;
+		const bottomY = pos.y + pos.h - 5;
+
+		for (let i = 0; i < el.concurrentRegions.length - 1; i++) {
+			const region = el.concurrentRegions[i];
+			let maxW = 0;
+			for (const childCode of region.elements) {
+				const childSize = this.sizeMap.get(childCode);
+				if (childSize && childSize.width > maxW) maxW = childSize.width;
+			}
+
+			cx += maxW + L.H_GAP / 2;
+
+			const sepId = this.nextId();
+			this.cells.push(buildCell({
+				id: sepId,
+				edge: true,
+				parent: this.parentId,
+				style: buildStyle({
+					html: 1,
+					dashed: 1,
+					endArrow: 'none',
+					endFill: 0,
+					strokeColor: '#999999',
+				}),
+				sourcePoint: { x: cx, y: topY },
+				targetPoint: { x: cx, y: bottomY },
+			}));
+
+			cx += L.H_GAP / 2;
 		}
 	}
 

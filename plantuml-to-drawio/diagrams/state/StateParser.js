@@ -299,7 +299,13 @@ class StateParser {
 	 */
 	_currentScopeCode() {
 		if (this.compositeStack.length === 0) return '__top__';
-		return this.compositeStack[this.compositeStack.length - 1].code;
+		const parent = this.compositeStack[this.compositeStack.length - 1];
+		// Inside concurrent regions, scope [*] to each region independently
+		if (parent.element.concurrentRegions.length > 0) {
+			const regionIdx = parent.element.concurrentRegions.length - 1;
+			return parent.code + '_r' + regionIdx;
+		}
+		return parent.code;
 	}
 
 	/**
