@@ -1,0 +1,24 @@
+@startuml
+title Transitions
+
+state A
+state B
+state C
+state D
+
+[*] --> A
+A --> B : simple
+A --> C
+B --> C : with label
+C --> D : multi\nline label
+D --> [*]
+
+A -left-> B : left
+A -right-> C : right
+B -up-> A : up
+C -down-> D : down
+
+A ---> D : longer arrow
+A ----> B : even longer
+
+@enduml

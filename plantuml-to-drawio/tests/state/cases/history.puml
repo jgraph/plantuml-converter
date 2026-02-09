@@ -1,0 +1,25 @@
+@startuml
+title History States
+
+state HasHistory {
+    [*] --> S1
+    S1 --> S2
+    S2 --> [*]
+}
+
+[*] --> HasHistory
+HasHistory --> [*]
+HasHistory[H] --> S1
+
+state HasDeepHistory {
+    state Inner {
+        [*] --> X
+        X --> [*]
+    }
+    [*] --> Inner
+    Inner --> [*]
+}
+
+HasDeepHistory[H*] --> Inner
+
+@enduml

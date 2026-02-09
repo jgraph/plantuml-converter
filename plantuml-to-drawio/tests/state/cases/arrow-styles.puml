@@ -1,0 +1,17 @@
+@startuml
+title Arrow Styles
+
+state Source
+state T1
+state T2
+state T3
+state T4
+state T5
+
+Source -[#red]-> T1 : colored red
+Source -[dashed]-> T2 : dashed
+Source -[dotted]-> T3 : dotted
+Source -[bold]-> T4 : bold
+Source -[#blue,dashed]-> T5 : blue dashed
+
+@enduml

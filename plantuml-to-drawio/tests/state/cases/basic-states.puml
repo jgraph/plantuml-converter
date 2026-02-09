@@ -1,0 +1,10 @@
+@startuml
+title Basic States
+
+state SimpleState
+state "Display Name" as AliasedState
+state ReverseAlias as "Reverse Display"
+state StateWithDesc : description line
+state "Quoted Only"
+
+@enduml

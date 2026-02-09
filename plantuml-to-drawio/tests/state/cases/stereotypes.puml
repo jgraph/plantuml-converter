@@ -1,0 +1,24 @@
+@startuml
+title Stereotypes
+
+state c1 <<choice>>
+state f1 <<fork>>
+state j1 <<join>>
+state s1 <<start>>
+state e1 <<end>>
+state h1 <<history>>
+state dh1 <<history*>>
+state custom <<MyStereotype>>
+
+[*] --> c1
+c1 --> f1 : [yes]
+c1 --> j1 : [no]
+f1 --> s1
+f1 --> e1
+j1 --> h1
+j1 --> dh1
+h1 --> custom
+dh1 --> custom
+custom --> [*]
+
+@enduml

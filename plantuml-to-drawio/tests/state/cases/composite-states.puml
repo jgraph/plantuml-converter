@@ -1,0 +1,24 @@
+@startuml
+title Composite States
+
+state "Outer State" as Outer {
+    [*] --> InnerA
+    InnerA --> InnerB
+    InnerB --> [*]
+}
+
+state Parent {
+    state Child {
+        state GrandChild
+        [*] --> GrandChild
+        GrandChild --> [*]
+    }
+    [*] --> Child
+    Child --> [*]
+}
+
+[*] --> Outer
+Outer --> Parent
+Parent --> [*]
+
+@enduml

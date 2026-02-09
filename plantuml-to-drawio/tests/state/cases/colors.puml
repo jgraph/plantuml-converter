@@ -1,0 +1,19 @@
+@startuml
+title Colors
+
+state BackgroundColor #LightBlue
+state LineColor ##red
+state BothColors #LightGreen ##blue
+state DashedBorder ##[dashed]DarkRed
+state BoldBorder ##[bold]Navy
+state HexColor #FF9900
+
+[*] --> BackgroundColor
+BackgroundColor --> LineColor
+LineColor --> BothColors
+BothColors --> DashedBorder
+DashedBorder --> BoldBorder
+BoldBorder --> HexColor
+HexColor --> [*]
+
+@enduml

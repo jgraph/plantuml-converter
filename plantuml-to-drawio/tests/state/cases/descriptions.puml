@@ -1,0 +1,21 @@
+@startuml
+title State Descriptions
+
+state Active
+Active : entry / initialize()
+Active : do / processEvents()
+Active : exit / cleanup()
+
+state "Processing" as Proc : handling request
+
+state MultiDesc
+MultiDesc : line 1
+MultiDesc : line 2
+MultiDesc : line 3
+
+[*] --> Active
+Active --> Proc
+Proc --> MultiDesc
+MultiDesc --> [*]
+
+@enduml

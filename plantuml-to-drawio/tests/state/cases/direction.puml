@@ -1,0 +1,15 @@
+@startuml
+title Direction Test
+
+left to right direction
+
+state A
+state B
+state C
+
+[*] --> A
+A --> B
+B --> C
+C --> [*]
+
+@enduml

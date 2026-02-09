@@ -37,6 +37,11 @@ import { extractFromPlantUmlSvg as extractComponentFromSvg } from './extract-pla
 import { extractFromDrawioXml as extractComponentFromDrawio } from './extract-drawio-xml-component.js';
 import { matchDiagrams as matchComponent, diffDiagrams as diffComponent, buildReport as buildComponentReport } from './normalize-component.js';
 
+// ── State diagram extractors ───────────────────────────────────────────
+import { extractFromPlantUmlSvg as extractStateFromSvg } from './extract-plantuml-svg-state.js';
+import { extractFromDrawioXml as extractStateFromDrawio } from './extract-drawio-xml-state.js';
+import { matchDiagrams as matchState, diffDiagrams as diffState, buildReport as buildStateReport } from './normalize-state.js';
+
 // ── Extractor registry ────────────────────────────────────────────────────
 
 const extractors = {
@@ -67,6 +72,13 @@ const extractors = {
 		match: matchComponent,
 		diff: diffComponent,
 		buildReport: buildComponentReport,
+	},
+	state: {
+		extractFromSvg: extractStateFromSvg,
+		extractFromDrawio: extractStateFromDrawio,
+		match: matchState,
+		diff: diffState,
+		buildReport: buildStateReport,
 	},
 };
 
@@ -113,7 +125,7 @@ if (isMain) {
 	const args = process.argv.slice(2);
 
 	if (args.length < 2) {
-		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase|component]');
+		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase|component|state]');
 		console.error('');
 		console.error('Compares a PlantUML SVG against a draw.io XML structurally.');
 		console.error('Output: JSON report to stdout.');
@@ -191,6 +203,18 @@ if (isMain) {
 				console.error(`  Elements (${cand.elements.length}): ${cand.elements.map(e => `${e.name}[${e.type}]`).join(', ')}`);
 				console.error(`  Containers: ${cand.containers.length}`);
 				console.error(`  Relationships: ${cand.relationships.length}`);
+				console.error(`  Notes: ${cand.notes.length}`);
+			} else if (diagramType === 'state') {
+				console.error('── Reference (PlantUML SVG) ──');
+				console.error(`  States (${ref.states.length}): ${ref.states.map(s => `${s.name}[${s.type}]`).join(', ')}`);
+				console.error(`  Composites: ${ref.composites.length}`);
+				console.error(`  Transitions: ${ref.transitions.length}`);
+				console.error(`  Notes: ${ref.notes.length}`);
+				console.error('');
+				console.error('── Candidate (draw.io XML) ──');
+				console.error(`  States (${cand.states.length}): ${cand.states.map(s => `${s.name}[${s.type}]`).join(', ')}`);
+				console.error(`  Composites: ${cand.composites.length}`);
+				console.error(`  Transitions: ${cand.transitions.length}`);
 				console.error(`  Notes: ${cand.notes.length}`);
 			}
 			console.error('');

@@ -43,6 +43,13 @@ import {
 	NotePosition as CompNotePosition,
 	ComponentElement, ComponentRelationship, ComponentContainer, ComponentNote, ComponentDiagram
 } from './diagrams/component/ComponentModel.js';
+import { parseStateDiagram } from './diagrams/state/StateParser.js';
+import { emitStateDiagram } from './diagrams/state/StateEmitter.js';
+import {
+	StateType, TransitionStyle, TransitionDirection,
+	NotePosition as StateNotePosition, DiagramDirection as StateDiagramDirection,
+	StateElement, StateTransition, StateNote, StateDiagram
+} from './diagrams/state/StateModel.js';
 
 let passed = 0;
 let failed = 0;
@@ -2594,6 +2601,552 @@ section('Component Pipeline');
 	assert(result.xml.includes('shape=cloud'), 'Deployment: cloud shape');
 	assert(result.xml.includes('cylinder3'), 'Deployment: database shape');
 	console.log('  Deployment elements: OK');
+}
+
+// ── State Parser Tests ───────────────────────────────────────────────────
+
+section('State Parser');
+
+// Basic state declarations
+{
+	const d = parseStateDiagram('state StateA');
+	assert(d.elements.size === 1, 'Simple state: 1 element');
+	assert(d.elements.has('StateA'), 'Simple state: code StateA');
+	assert(d.elements.get('StateA').type === StateType.STATE, 'Simple state: type STATE');
+	console.log('  Simple state declaration: OK');
+}
+
+{
+	const d = parseStateDiagram('state "Long Name" as LN');
+	assert(d.elements.has('LN'), 'Alias: code LN');
+	assert(d.elements.get('LN').displayName === 'Long Name', 'Alias: display name');
+	console.log('  Display-as-code alias: OK');
+}
+
+{
+	const d = parseStateDiagram('state LN as "Long Name"');
+	assert(d.elements.has('LN'), 'Reverse alias: code LN');
+	assert(d.elements.get('LN').displayName === 'Long Name', 'Reverse alias: display name');
+	console.log('  Code-as-display alias: OK');
+}
+
+{
+	const d = parseStateDiagram('state StateA : entry / init\nstate StateA : do / process');
+	const el = d.elements.get('StateA');
+	assert(el.descriptions.length === 2, 'Inline desc: 2 descriptions');
+	assert(el.descriptions[0] === 'entry / init', 'Inline desc: first');
+	assert(el.descriptions[1] === 'do / process', 'Inline desc: second');
+	console.log('  Inline descriptions: OK');
+}
+
+// Start/end pseudostates
+{
+	const d = parseStateDiagram('[*] --> StateA');
+	assert(d.transitions.length === 1, 'Start transition: 1 transition');
+	const fromCode = d.transitions[0].from;
+	const fromEl = d.elements.get(fromCode);
+	assert(fromEl.type === StateType.INITIAL, 'Start: initial type');
+	assert(d.elements.has('StateA'), 'Start: auto-created target');
+	console.log('  Start pseudostate [*] -->: OK');
+}
+
+{
+	const d = parseStateDiagram('StateA --> [*]');
+	const toCode = d.transitions[0].to;
+	const toEl = d.elements.get(toCode);
+	assert(toEl.type === StateType.FINAL, 'End: final type');
+	console.log('  End pseudostate --> [*]: OK');
+}
+
+{
+	const d = parseStateDiagram('[*] --> A\nA --> [*]');
+	const types = [...d.elements.values()].map(e => e.type);
+	assert(types.includes(StateType.INITIAL), 'Both: has initial');
+	assert(types.includes(StateType.FINAL), 'Both: has final');
+	assert(d.transitions.length === 2, 'Both: 2 transitions');
+	console.log('  Both start and end: OK');
+}
+
+// Transitions with labels and directions
+{
+	const d = parseStateDiagram('A --> B : go next');
+	assert(d.transitions[0].label === 'go next', 'Label: text');
+	assert(d.transitions[0].from === 'A', 'Label: from');
+	assert(d.transitions[0].to === 'B', 'Label: to');
+	console.log('  Transition label: OK');
+}
+
+{
+	const d = parseStateDiagram('A -left-> B');
+	assert(d.transitions[0].direction === TransitionDirection.LEFT, 'Direction: left');
+	console.log('  Direction left: OK');
+}
+
+{
+	const d = parseStateDiagram('A -right-> B');
+	assert(d.transitions[0].direction === TransitionDirection.RIGHT, 'Direction: right');
+	console.log('  Direction right: OK');
+}
+
+{
+	const d = parseStateDiagram('A -up-> B');
+	assert(d.transitions[0].direction === TransitionDirection.UP, 'Direction: up');
+	console.log('  Direction up: OK');
+}
+
+{
+	const d = parseStateDiagram('A -down-> B');
+	assert(d.transitions[0].direction === TransitionDirection.DOWN, 'Direction: down');
+	console.log('  Direction down: OK');
+}
+
+{
+	const d = parseStateDiagram('A -[dashed]-> B');
+	assert(d.transitions[0].lineStyle === TransitionStyle.DASHED, 'Style: dashed');
+	console.log('  Arrow style dashed: OK');
+}
+
+{
+	const d = parseStateDiagram('A -[dotted]-> B');
+	assert(d.transitions[0].lineStyle === TransitionStyle.DOTTED, 'Style: dotted');
+	console.log('  Arrow style dotted: OK');
+}
+
+{
+	const d = parseStateDiagram('A -[bold]-> B');
+	assert(d.transitions[0].lineStyle === TransitionStyle.BOLD, 'Style: bold');
+	console.log('  Arrow style bold: OK');
+}
+
+{
+	const d = parseStateDiagram('A -[#red]-> B');
+	assert(d.transitions[0].color === '#red', 'Color: #red');
+	console.log('  Arrow color: OK');
+}
+
+{
+	const d = parseStateDiagram('A -[#blue,dashed]-> B : label');
+	assert(d.transitions[0].color === '#blue', 'Combined: color');
+	assert(d.transitions[0].lineStyle === TransitionStyle.DASHED, 'Combined: style');
+	assert(d.transitions[0].label === 'label', 'Combined: label');
+	console.log('  Combined arrow style + color: OK');
+}
+
+{
+	const d = parseStateDiagram('A ---> B');
+	assert(d.transitions[0].arrowLength >= 3, 'Long arrow: length >= 3');
+	console.log('  Long arrow: OK');
+}
+
+// Reverse arrows
+{
+	const d = parseStateDiagram('B <-- A : back');
+	assert(d.transitions[0].from === 'A', 'Reverse: from A');
+	assert(d.transitions[0].to === 'B', 'Reverse: to B');
+	assert(d.transitions[0].label === 'back', 'Reverse: label');
+	console.log('  Reverse arrow <--: OK');
+}
+
+// Composite states
+{
+	const d = parseStateDiagram('state Composite {\n  state Inner\n}');
+	assert(d.elements.has('Composite'), 'Composite: exists');
+	const comp = d.elements.get('Composite');
+	assert(comp.children.length === 1, 'Composite: 1 child');
+	assert(comp.children[0] === 'Inner', 'Composite: child is Inner');
+	const inner = d.elements.get('Inner');
+	assert(inner.parentCode === 'Composite', 'Composite: child parentCode');
+	console.log('  Composite state: OK');
+}
+
+{
+	const d = parseStateDiagram(
+		'state Outer {\n  state Middle {\n    state Deep\n  }\n}'
+	);
+	const outer = d.elements.get('Outer');
+	assert(outer.children.includes('Middle'), 'Nested: Outer has Middle');
+	const middle = d.elements.get('Middle');
+	assert(middle.children.includes('Deep'), 'Nested: Middle has Deep');
+	const deep = d.elements.get('Deep');
+	assert(deep.parentCode === 'Middle', 'Nested: Deep parent is Middle');
+	console.log('  Nested composite: OK');
+}
+
+{
+	const d = parseStateDiagram(
+		'state Comp {\n  [*] --> A\n  A --> [*]\n}'
+	);
+	const comp = d.elements.get('Comp');
+	assert(comp.childTransitions.length === 2, 'Composite transitions: 2 inner');
+	// Verify inner [*] are scoped to Comp
+	const initialCode = comp.childTransitions[0].from;
+	assert(initialCode.includes('Comp'), 'Inner [*]: scoped to Comp');
+	console.log('  Composite inner transitions: OK');
+}
+
+// begin/end state syntax
+{
+	const d = parseStateDiagram('state MyState begin\n  state Inner\nend state');
+	assert(d.elements.has('MyState'), 'Begin/end: composite exists');
+	const comp = d.elements.get('MyState');
+	assert(comp.children.includes('Inner'), 'Begin/end: has child');
+	console.log('  Begin/end state syntax: OK');
+}
+
+// Stereotypes
+{
+	const d = parseStateDiagram('state c1 <<choice>>');
+	assert(d.elements.get('c1').type === StateType.CHOICE, 'Stereotype: choice');
+	console.log('  Stereotype choice: OK');
+}
+
+{
+	const d = parseStateDiagram('state f1 <<fork>>');
+	assert(d.elements.get('f1').type === StateType.FORK_JOIN, 'Stereotype: fork');
+	console.log('  Stereotype fork: OK');
+}
+
+{
+	const d = parseStateDiagram('state j1 <<join>>');
+	assert(d.elements.get('j1').type === StateType.FORK_JOIN, 'Stereotype: join');
+	console.log('  Stereotype join: OK');
+}
+
+{
+	const d = parseStateDiagram('state s1 <<start>>');
+	assert(d.elements.get('s1').type === StateType.INITIAL, 'Stereotype: start');
+	console.log('  Stereotype start: OK');
+}
+
+{
+	const d = parseStateDiagram('state e1 <<end>>');
+	assert(d.elements.get('e1').type === StateType.FINAL, 'Stereotype: end');
+	console.log('  Stereotype end: OK');
+}
+
+{
+	const d = parseStateDiagram('state h1 <<history>>');
+	assert(d.elements.get('h1').type === StateType.HISTORY, 'Stereotype: history');
+	console.log('  Stereotype history: OK');
+}
+
+{
+	const d = parseStateDiagram('state dh1 <<history*>>');
+	assert(d.elements.get('dh1').type === StateType.DEEP_HISTORY, 'Stereotype: deep history');
+	console.log('  Stereotype deep history: OK');
+}
+
+{
+	const d = parseStateDiagram('state custom <<MyService>>');
+	const el = d.elements.get('custom');
+	assert(el.type === StateType.STATE, 'Custom stereo: type STATE');
+	assert(el.stereotypes.length === 1, 'Custom stereo: 1 stereotype');
+	assert(el.stereotypes[0] === 'MyService', 'Custom stereo: text');
+	console.log('  Custom stereotype: OK');
+}
+
+// Colors
+{
+	const d = parseStateDiagram('state Colored #LightBlue');
+	assert(d.elements.get('Colored').color === '#LightBlue', 'Color: background');
+	console.log('  Background color: OK');
+}
+
+{
+	const d = parseStateDiagram('state Bordered ##red');
+	assert(d.elements.get('Bordered').lineColor === 'red', 'Color: line color');
+	console.log('  Line color: OK');
+}
+
+{
+	const d = parseStateDiagram('state S1 ##[dashed]blue');
+	const el = d.elements.get('S1');
+	assert(el.lineColor === 'blue', 'Dashed border: line color');
+	assert(el.lineStyle === 'dashed', 'Dashed border: line style');
+	console.log('  Dashed border: OK');
+}
+
+// Add field (description)
+{
+	const d = parseStateDiagram('state S1\nS1 : field 1\nS1 : field 2');
+	const el = d.elements.get('S1');
+	assert(el.descriptions.length === 2, 'Add field: 2 lines');
+	assert(el.descriptions[0] === 'field 1', 'Add field: first');
+	assert(el.descriptions[1] === 'field 2', 'Add field: second');
+	console.log('  Add field: OK');
+}
+
+// Notes
+{
+	const d = parseStateDiagram('state A\nnote left of A : my note');
+	assert(d.notes.length === 1, 'Note single: 1 note');
+	assert(d.notes[0].entityCode === 'A', 'Note single: entity');
+	assert(d.notes[0].text === 'my note', 'Note single: text');
+	assert(d.notes[0].position === StateNotePosition.LEFT, 'Note single: position');
+	console.log('  Single-line note: OK');
+}
+
+{
+	const d = parseStateDiagram('state A\nnote right of A\n  line 1\n  line 2\nend note');
+	assert(d.notes.length === 1, 'Note multi: 1 note');
+	assert(d.notes[0].text.includes('line 1'), 'Note multi: contains line 1');
+	assert(d.notes[0].text.includes('line 2'), 'Note multi: contains line 2');
+	console.log('  Multi-line note: OK');
+}
+
+{
+	const d = parseStateDiagram('note "Floating" as N1');
+	assert(d.notes.length === 1, 'Floating note: 1 note');
+	assert(d.notes[0].alias === 'N1', 'Floating note: alias');
+	assert(d.notes[0].text === 'Floating', 'Floating note: text');
+	console.log('  Floating note: OK');
+}
+
+{
+	const d = parseStateDiagram('A --> B\nnote on link : link note');
+	assert(d.notes.length === 1, 'Note on link: 1 note');
+	assert(d.notes[0].isOnLink === true, 'Note on link: isOnLink');
+	assert(d.notes[0].text === 'link note', 'Note on link: text');
+	console.log('  Note on link: OK');
+}
+
+// Concurrent regions
+{
+	const d = parseStateDiagram(
+		'state Concurrent {\n  state A\n  --\n  state B\n}'
+	);
+	const el = d.elements.get('Concurrent');
+	assert(el.concurrentRegions.length === 2, 'Concurrent: 2 regions');
+	assert(el.concurrentRegions[0].elements.includes('A'), 'Concurrent: region 0 has A');
+	assert(el.concurrentRegions[1].elements.includes('B'), 'Concurrent: region 1 has B');
+	console.log('  Concurrent regions: OK');
+}
+
+{
+	const d = parseStateDiagram(
+		'state C {\n  state A\n  --\n  state B\n  --\n  state D\n}'
+	);
+	const el = d.elements.get('C');
+	assert(el.concurrentRegions.length === 3, 'Three regions: 3');
+	console.log('  Three concurrent regions: OK');
+}
+
+// History states
+{
+	const d = parseStateDiagram('[H] --> Target');
+	const fromCode = d.transitions[0].from;
+	assert(d.elements.get(fromCode).type === StateType.HISTORY, 'History: [H] type');
+	console.log('  History state [H]: OK');
+}
+
+{
+	const d = parseStateDiagram('[H*] --> Target');
+	const fromCode = d.transitions[0].from;
+	assert(d.elements.get(fromCode).type === StateType.DEEP_HISTORY, 'Deep history: [H*] type');
+	console.log('  Deep history state [H*]: OK');
+}
+
+{
+	const d = parseStateDiagram('state Parent {\n  state Child\n}\nParent[H] --> Child');
+	const fromCode = d.transitions[0].from;
+	assert(d.elements.get(fromCode).type === StateType.HISTORY, 'Named history: type');
+	assert(fromCode.includes('Parent'), 'Named history: scoped to Parent');
+	console.log('  Named history Parent[H]: OK');
+}
+
+// Synchro bars
+{
+	const d = parseStateDiagram('A --> ==sync1==\n==sync1== --> B');
+	assert(d.elements.has('sync1'), 'Synchro: element exists');
+	assert(d.elements.get('sync1').type === StateType.SYNCHRO_BAR, 'Synchro: type');
+	assert(d.transitions.length === 2, 'Synchro: 2 transitions');
+	console.log('  Synchro bar ==name==: OK');
+}
+
+// Direction
+{
+	const d = parseStateDiagram('left to right direction\nstate A');
+	assert(d.direction === StateDiagramDirection.LEFT_TO_RIGHT, 'Direction: LTR');
+	console.log('  Left to right direction: OK');
+}
+
+{
+	const d = parseStateDiagram('top to bottom direction\nstate A');
+	assert(d.direction === StateDiagramDirection.TOP_TO_BOTTOM, 'Direction: TTB');
+	console.log('  Top to bottom direction: OK');
+}
+
+// Hide empty description
+{
+	const d = parseStateDiagram('hide empty description');
+	assert(d.hideEmptyDescription === true, 'Hide empty: true');
+	console.log('  Hide empty description: OK');
+}
+
+// Title
+{
+	const d = parseStateDiagram('title My State Diagram');
+	assert(d.title === 'My State Diagram', 'Title: parsed');
+	console.log('  Title: OK');
+}
+
+// ── State Emitter Tests ─────────────────────────────────────────────────
+
+section('State Emitter');
+
+{
+	const d = parseStateDiagram('[*] --> Active\nActive --> [*]');
+	const cells = emitStateDiagram(d, 'p1');
+	assert(cells.length > 0, 'Emitter: produces cells');
+	const hasRounded = cells.some(c => c.includes('rounded=1'));
+	assert(hasRounded, 'Emitter: rounded rect for state');
+	console.log('  Basic state emission: OK');
+}
+
+{
+	const d = parseStateDiagram('[*] --> A');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasBlackEllipse = cells.some(c => c.includes('ellipse') && c.includes('fillColor=#000000'));
+	assert(hasBlackEllipse, 'Emitter: start = filled black ellipse');
+	console.log('  Initial state shape: OK');
+}
+
+{
+	const d = parseStateDiagram('A --> [*]');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasFinalOuter = cells.some(c => c.includes('ellipse') && c.includes('strokeWidth=2'));
+	assert(hasFinalOuter, 'Emitter: final = outer ellipse with strokeWidth');
+	const hasFinalInner = cells.some(c => c.includes('ellipse') && c.includes('fillColor=#000000'));
+	assert(hasFinalInner, 'Emitter: final = inner filled ellipse');
+	console.log('  Final state shape (bullseye): OK');
+}
+
+{
+	const d = parseStateDiagram('state c1 <<choice>>\nA --> c1');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasRhombus = cells.some(c => c.includes('rhombus'));
+	assert(hasRhombus, 'Emitter: choice = rhombus');
+	console.log('  Choice diamond shape: OK');
+}
+
+{
+	const d = parseStateDiagram('state fk <<fork>>\nA --> fk');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasBar = cells.some(c => c.includes('fillColor=#000000') && c.includes('arcSize=50'));
+	assert(hasBar, 'Emitter: fork = black bar');
+	console.log('  Fork/join bar shape: OK');
+}
+
+{
+	const d = parseStateDiagram('state h1 <<history>>\nA --> h1');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasH = cells.some(c => c.includes('value="H"'));
+	assert(hasH, 'Emitter: history = H label');
+	console.log('  History shape: OK');
+}
+
+{
+	const d = parseStateDiagram('state dh1 <<history*>>\nA --> dh1');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasHStar = cells.some(c => c.includes('value="H*"'));
+	assert(hasHStar, 'Emitter: deep history = H* label');
+	console.log('  Deep history shape: OK');
+}
+
+{
+	const d = parseStateDiagram('A --> B : go');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasEdge = cells.some(c => c.includes('edge="1"'));
+	assert(hasEdge, 'Emitter: edge cell exists');
+	const hasLabel = cells.some(c => c.includes('edge="1"') && c.includes('go'));
+	assert(hasLabel, 'Emitter: edge has label');
+	console.log('  Edge with label: OK');
+}
+
+{
+	const d = parseStateDiagram('state Comp {\n  state Inner\n}');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasContainer = cells.some(c => c.includes('container=1'));
+	assert(hasContainer, 'Emitter: composite = container');
+	console.log('  Composite container: OK');
+}
+
+{
+	const d = parseStateDiagram('state S1 : entry / init\nstate S1 : do / work');
+	const cells = emitStateDiagram(d, 'p1');
+	const hasSwimlane = cells.some(c => c.includes('shape=swimlane'));
+	assert(hasSwimlane, 'Emitter: state with desc = swimlane');
+	console.log('  State with descriptions (swimlane): OK');
+}
+
+// ── State Pipeline Tests ────────────────────────────────────────────────
+
+section('State Pipeline');
+
+{
+	const input = '@startuml\n[*] --> Active\nActive --> Inactive\nInactive --> [*]\n@enduml';
+	const result = convert(input);
+	assert(result.diagramType === 'state', 'Pipeline: detected as state');
+	assert(result.xml.includes('<mxfile>'), 'Pipeline: has mxfile');
+	assert(result.xml.includes('mxCell'), 'Pipeline: has cells');
+	console.log('  Basic pipeline: OK');
+}
+
+{
+	const type = detectDiagramType('[*] --> Active\nActive --> [*]');
+	assert(type === 'state', 'Detection: [*] transitions = state');
+	console.log('  Detection by [*]: OK');
+}
+
+{
+	const type = detectDiagramType('@startstate\nA --> B\n@endstate');
+	assert(type === 'state', 'Detection: @startstate');
+	console.log('  Detection by @startstate: OK');
+}
+
+{
+	const type = detectDiagramType('state Active\nstate Inactive\n[*] --> Active');
+	assert(type === 'state', 'Detection: state keyword + [*]');
+	console.log('  Detection by state keyword + [*]: OK');
+}
+
+{
+	// Should NOT collide with activity
+	const type = detectDiagramType(':action1;\nstart\nstop');
+	assert(type === 'activity', 'No collision: activity still detected');
+	console.log('  No collision with activity: OK');
+}
+
+{
+	// Should NOT collide with sequence
+	const type = detectDiagramType('Alice -> Bob : hello\nBob -> Alice : hi');
+	assert(type === 'sequence', 'No collision: sequence still detected');
+	console.log('  No collision with sequence: OK');
+}
+
+{
+	// Should NOT collide with class
+	const type = detectDiagramType('class Foo {\n  +bar()\n}\nclass Baz');
+	assert(type === 'class', 'No collision: class still detected');
+	console.log('  No collision with class: OK');
+}
+
+{
+	// Composite state pipeline
+	const input = 'state Outer {\n  [*] --> Inner\n  Inner --> [*]\n}';
+	const result = convert(input);
+	assert(result.diagramType === 'state', 'Composite pipeline: detected as state');
+	assert(result.xml.includes('container=1'), 'Composite pipeline: has container');
+	console.log('  Composite state pipeline: OK');
+}
+
+{
+	// State with stereotypes pipeline
+	const input = 'state c1 <<choice>>\n[*] --> c1\nc1 --> A : yes\nc1 --> B : no';
+	const result = convert(input);
+	assert(result.diagramType === 'state', 'Stereo pipeline: detected');
+	assert(result.xml.includes('rhombus'), 'Stereo pipeline: choice shape');
+	console.log('  Choice stereotype pipeline: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

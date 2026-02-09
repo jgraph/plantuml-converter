@@ -1,0 +1,27 @@
+@startuml
+title Notes
+
+state A
+state B
+
+[*] --> A
+A --> B
+B --> [*]
+
+note left of A : Left note
+note right of B : Right note
+note top of A : Top note
+note bottom of B : Bottom note
+
+note right of A
+    Multi-line note
+    with several lines
+    of text
+end note
+
+note "Floating note" as N1
+
+A --> B
+note on link : Note on a link
+
+@enduml
