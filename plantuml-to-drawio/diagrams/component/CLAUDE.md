@@ -73,7 +73,7 @@ note on link : text
 | ElementType | draw.io shape |
 |---|---|
 | COMPONENT | `shape=component;` |
-| NODE | `shape=mxgraph.flowchart.process;` |
+| NODE | `shape=box3d;size=10;` |
 | CLOUD | `shape=cloud;` |
 | DATABASE | `shape=cylinder3;size=15;` |
 | STORAGE | `shape=mxgraph.eip.dataStore;` |
@@ -81,7 +81,7 @@ note on link : text
 | FOLDER | `shape=folder;tabWidth=80;tabHeight=20;` |
 | FILE | `shape=note;size=15;` |
 | FRAME | `shape=mxgraph.sysml.package;` |
-| INTERFACE | `shape=ellipse;` (small 20x20) |
+| INTERFACE | `shape=ellipse;` (30x30, label below) |
 | ACTOR | `shape=umlActor;` |
 | AGENT | rectangle (no special shape) |
 | PERSON | `shape=mxgraph.basic.person;` |
@@ -107,10 +107,17 @@ Triggers on `@startcomponent` or `@startdeployment`, or when the text scores >= 
 
 This avoids false positives with usecase diagrams (which use `(parens)` and `:colons:`, not `[brackets]`).
 
+## Layout
+
+Uses a **topology-aware layered layout**:
+- Connected elements are arranged top-to-bottom following relationship direction (longest-path layering)
+- Orphan elements (no relationships) are placed in a 4-column grid below
+- Containers are arranged in a 3-column grid
+- Stereotypes render with proper guillemets (`«Service»`)
+
 ## Known Limitations
 
-- **Layout**: Uses simple grid layout. ELK handles real layout on the draw.io side.
-- **Ports**: Parsed but rendered as standalone small circles, not positioned on container edges.
+- **Ports**: Parsed but rendered as standalone small circles inside containers, not positioned on container edges.
 - **Archimate**: Not supported.
 - **Domain/Requirement**: Not supported.
 - **Tags**: `$tag` syntax parsed but not acted upon.
