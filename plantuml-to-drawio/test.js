@@ -50,6 +50,13 @@ import {
 	NotePosition as StateNotePosition, DiagramDirection as StateDiagramDirection,
 	StateElement, StateTransition, StateNote, StateDiagram
 } from './diagrams/state/StateModel.js';
+import { parseTimingDiagram } from './diagrams/timing/TimingParser.js';
+import { emitTimingDiagram } from './diagrams/timing/TimingEmitter.js';
+import {
+	PlayerType, NotePosition as TimingNotePosition,
+	TimingPlayer, StateChange, TimeConstraint, TimeMessage,
+	TimingHighlight, TimingNote, TimingDiagram as TimingDiagramModel
+} from './diagrams/timing/TimingModel.js';
 
 let passed = 0;
 let failed = 0;
@@ -3147,6 +3154,328 @@ section('State Pipeline');
 	assert(result.diagramType === 'state', 'Stereo pipeline: detected');
 	assert(result.xml.includes('rhombus'), 'Stereo pipeline: choice shape');
 	console.log('  Choice stereotype pipeline: OK');
+}
+
+// ── Timing Parser Tests ──────────────────────────────────────────────────
+
+section('Timing Parser');
+
+{
+	// Robust player declaration
+	const input = 'robust "Web Server" as WS #LightBlue\n@0\nWS is Idle';
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 1, 'robust: 1 player');
+	assert(d.players[0].type === PlayerType.ROBUST, 'robust: type');
+	assert(d.players[0].displayName === 'Web Server', 'robust: displayName');
+	assert(d.players[0].code === 'WS', 'robust: code');
+	assert(d.players[0].color === '#LightBlue', 'robust: color');
+	console.log('  Robust player declaration: OK');
+}
+
+{
+	// Concise player declaration
+	const input = 'concise "Client" as C\n@0\nC is Waiting';
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 1, 'concise: 1 player');
+	assert(d.players[0].type === PlayerType.CONCISE, 'concise: type');
+	assert(d.players[0].displayName === 'Client', 'concise: displayName');
+	console.log('  Concise player declaration: OK');
+}
+
+{
+	// Clock player declaration
+	const input = 'clock "System Clock" as clk with period 10 pulse 5 offset 2';
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 1, 'clock: 1 player');
+	assert(d.players[0].type === PlayerType.CLOCK, 'clock: type');
+	assert(d.players[0].clockPeriod === 10, 'clock: period');
+	assert(d.players[0].clockPulse === 5, 'clock: pulse');
+	assert(d.players[0].clockOffset === 2, 'clock: offset');
+	console.log('  Clock player declaration: OK');
+}
+
+{
+	// Binary player declaration
+	const input = 'binary "Enable" as EN\n@0\nEN is low';
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 1, 'binary: 1 player');
+	assert(d.players[0].type === PlayerType.BINARY, 'binary: type');
+	console.log('  Binary player declaration: OK');
+}
+
+{
+	// Analog player declaration
+	const input = 'analog "Voltage" between 0 and 5 as V\n@0\nV is 0';
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 1, 'analog: 1 player');
+	assert(d.players[0].type === PlayerType.ANALOG, 'analog: type');
+	assert(d.players[0].analogStart === 0, 'analog: start');
+	assert(d.players[0].analogEnd === 5, 'analog: end');
+	console.log('  Analog player declaration: OK');
+}
+
+{
+	// Rectangle player declaration
+	const input = 'rectangle "Status" as ST\n@0\nST is Init';
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 1, 'rectangle: 1 player');
+	assert(d.players[0].type === PlayerType.RECTANGLE, 'rectangle: type');
+	console.log('  Rectangle player declaration: OK');
+}
+
+{
+	// Compact player
+	const input = 'compact robust "Server" as S\n@0\nS is Idle';
+	const d = parseTimingDiagram(input);
+	assert(d.players[0].compact === true, 'compact: flag set');
+	console.log('  Compact player: OK');
+}
+
+{
+	// State definitions (short form)
+	const input = 'robust "S" as S\nS has Idle, Running, Error\n@0\nS is Idle';
+	const d = parseTimingDiagram(input);
+	const p = d.players[0];
+	assert(p.states.length >= 3, 'state-def: 3+ states');
+	assert(p.states.indexOf('Idle') >= 0, 'state-def: Idle');
+	assert(p.states.indexOf('Running') >= 0, 'state-def: Running');
+	assert(p.states.indexOf('Error') >= 0, 'state-def: Error');
+	console.log('  State definitions (short): OK');
+}
+
+{
+	// Absolute state changes
+	const input = 'robust "S" as S\n@0\nS is Idle\n@10\nS is Running\n@20\nS is Idle';
+	const d = parseTimingDiagram(input);
+	const changes = d.players[0].stateChanges;
+	assert(changes.length === 3, 'abs-state: 3 changes');
+	assert(changes[0].time === 0, 'abs-state: t0');
+	assert(changes[0].state === 'Idle', 'abs-state: s0');
+	assert(changes[1].time === 10, 'abs-state: t1');
+	assert(changes[1].state === 'Running', 'abs-state: s1');
+	assert(changes[2].time === 20, 'abs-state: t2');
+	console.log('  Absolute state changes: OK');
+}
+
+{
+	// Relative state changes via @PLAYER context
+	const input = 'robust "S" as S\n@S\n0 is Idle\n+10 is Running\n+5 is Idle';
+	const d = parseTimingDiagram(input);
+	const changes = d.players[0].stateChanges;
+	assert(changes.length === 3, 'rel-state: 3 changes');
+	assert(changes[0].time === 0, 'rel-state: t0');
+	assert(changes[1].time === 10, 'rel-state: t1');
+	assert(changes[2].time === 15, 'rel-state: t2=15');
+	console.log('  Relative state changes: OK');
+}
+
+{
+	// Named time points
+	const input = 'robust "S" as S\n@10 as :start\nS is Running\n@30 as :end\nS is Idle';
+	const d = parseTimingDiagram(input);
+	assert(d.timeAliases.get('start') === 10, 'named-time: start=10');
+	assert(d.timeAliases.get('end') === 30, 'named-time: end=30');
+	console.log('  Named time points: OK');
+}
+
+{
+	// Time constraints
+	const input = 'robust "S" as S\n@0\nS is Idle\n@10\nS is Running\n@0 <--> @10 : {10ms}';
+	const d = parseTimingDiagram(input);
+	assert(d.constraints.length === 1, 'constraint: 1 constraint');
+	assert(d.constraints[0].time1 === 0, 'constraint: t1');
+	assert(d.constraints[0].time2 === 10, 'constraint: t2');
+	assert(d.constraints[0].label === '{10ms}', 'constraint: label');
+	console.log('  Time constraints: OK');
+}
+
+{
+	// Inter-player messages
+	const input = 'robust "A" as A\nrobust "B" as B\n@0\nA is X\nB is Y\nA@10 --> B@15 : request';
+	const d = parseTimingDiagram(input);
+	assert(d.messages.length === 1, 'message: 1 message');
+	assert(d.messages[0].fromPlayer === 'A', 'message: from');
+	assert(d.messages[0].fromTime === 10, 'message: fromTime');
+	assert(d.messages[0].toPlayer === 'B', 'message: to');
+	assert(d.messages[0].toTime === 15, 'message: toTime');
+	assert(d.messages[0].label === 'request', 'message: label');
+	console.log('  Inter-player messages: OK');
+}
+
+{
+	// Highlights
+	const input = 'robust "S" as S\n@0\nS is Idle\nhighlight 10 to 20 #Gold : busy';
+	const d = parseTimingDiagram(input);
+	assert(d.highlights.length === 1, 'highlight: 1 highlight');
+	assert(d.highlights[0].startTime === 10, 'highlight: start');
+	assert(d.highlights[0].endTime === 20, 'highlight: end');
+	assert(d.highlights[0].color === '#Gold', 'highlight: color');
+	assert(d.highlights[0].caption === 'busy', 'highlight: caption');
+	console.log('  Highlights: OK');
+}
+
+{
+	// Notes
+	const input = 'robust "S" as S\n@0\nS is Idle\nnote top of S : Server info';
+	const d = parseTimingDiagram(input);
+	assert(d.notes.length === 1, 'note: 1 note');
+	assert(d.notes[0].position === TimingNotePosition.TOP, 'note: position');
+	assert(d.notes[0].playerCode === 'S', 'note: player');
+	assert(d.notes[0].text === 'Server info', 'note: text');
+	console.log('  Notes: OK');
+}
+
+{
+	// Global compact mode
+	const input = 'mode compact\nrobust "S" as S\n@0\nS is Idle';
+	const d = parseTimingDiagram(input);
+	assert(d.compactMode === true, 'compact-global: flag');
+	assert(d.players[0].compact === true, 'compact-global: player inherits');
+	console.log('  Global compact mode: OK');
+}
+
+{
+	// Hide time axis
+	const input = 'hide time axis\nrobust "S" as S\n@0\nS is Idle';
+	const d = parseTimingDiagram(input);
+	assert(d.hideTimeAxis === true, 'hide-axis: flag');
+	console.log('  Hide time axis: OK');
+}
+
+{
+	// Title
+	const input = 'title My Timing Diagram\nrobust "S" as S\n@0\nS is Idle';
+	const d = parseTimingDiagram(input);
+	assert(d.title === 'My Timing Diagram', 'title: text');
+	console.log('  Title: OK');
+}
+
+{
+	// Multiple players
+	const input = [
+		'robust "Server" as S',
+		'concise "Client" as C',
+		'clock "CLK" as clk with period 10',
+		'binary "EN" as EN',
+		'@0',
+		'S is Idle',
+		'C is Waiting',
+		'EN is low',
+		'@10',
+		'S is Running',
+		'C is Active',
+		'EN is high',
+	].join('\n');
+	const d = parseTimingDiagram(input);
+	assert(d.players.length === 4, 'multi: 4 players');
+	assert(d.players[0].stateChanges.length === 2, 'multi: S has 2 changes');
+	assert(d.players[1].stateChanges.length === 2, 'multi: C has 2 changes');
+	assert(d.players[3].stateChanges.length === 2, 'multi: EN has 2 changes');
+	console.log('  Multiple players: OK');
+}
+
+// ── Timing Emitter Tests ─────────────────────────────────────────────────
+
+section('Timing Emitter');
+
+{
+	// Basic emit — one robust player with 2 state changes
+	const input = 'robust "Server" as S\nS has Idle, Running\n@0\nS is Idle\n@10\nS is Running';
+	const model = parseTimingDiagram(input);
+	const cells = emitTimingDiagram(model, 'puml-grp-1');
+	assert(cells.length > 0, 'emit: produces cells');
+
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('Server'), 'emit: player label');
+	assert(cellStr.includes('edge="1"'), 'emit: has edges (waveform)');
+	assert(cellStr.includes('vertex="1"'), 'emit: has vertices');
+	console.log('  Basic robust emit: OK');
+}
+
+{
+	// Clock emit
+	const input = 'clock "CLK" as clk with period 10\n@0\n@40';
+	const model = parseTimingDiagram(input);
+	const cells = emitTimingDiagram(model, 'puml-grp-1');
+	assert(cells.length > 0, 'clock-emit: produces cells');
+	console.log('  Clock emit: OK');
+}
+
+{
+	// Highlight emit
+	const input = 'robust "S" as S\n@0\nS is Idle\n@20\nS is Done\nhighlight 0 to 20 #Gold : test';
+	const model = parseTimingDiagram(input);
+	const cells = emitTimingDiagram(model, 'puml-grp-1');
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('opacity'), 'hl-emit: has opacity (highlight)');
+	assert(cellStr.includes('test'), 'hl-emit: has caption');
+	console.log('  Highlight emit: OK');
+}
+
+{
+	// Message emit
+	const input = 'robust "A" as A\nrobust "B" as B\n@0\nA is X\nB is Y\nA@10 --> B@15 : req';
+	const model = parseTimingDiagram(input);
+	const cells = emitTimingDiagram(model, 'puml-grp-1');
+	const cellStr = cells.join('\n');
+	assert(cellStr.includes('req'), 'msg-emit: has label');
+	assert(cellStr.includes('endArrow=block'), 'msg-emit: has arrow');
+	console.log('  Message emit: OK');
+}
+
+// ── Timing Pipeline Tests ────────────────────────────────────────────────
+
+section('Timing Pipeline');
+
+{
+	// Detection
+	const input = 'robust "Server" as S\nconcise "Client" as C\n@0\nS is Idle\nC is Waiting';
+	const dt = detectDiagramType(input);
+	assert(dt === 'timing', 'detect: timing');
+	console.log('  Detection: OK');
+}
+
+{
+	// Detection with clock
+	const input = 'clock clk with period 10\n@0\n@40';
+	const dt = detectDiagramType(input);
+	assert(dt === 'timing', 'detect-clock: timing');
+	console.log('  Detection (clock): OK');
+}
+
+{
+	// Detection with binary
+	const input = 'binary "EN" as EN\n@0\nEN is low\n@10\nEN is high';
+	const dt = detectDiagramType(input);
+	assert(dt === 'timing', 'detect-binary: timing');
+	console.log('  Detection (binary): OK');
+}
+
+{
+	// Detection with analog
+	const input = 'analog "Voltage" between 0 and 5 as V\n@0\nV is 0\n@10\nV is 3.5';
+	const dt = detectDiagramType(input);
+	assert(dt === 'timing', 'detect-analog: timing');
+	console.log('  Detection (analog): OK');
+}
+
+{
+	// Full pipeline
+	const input = 'robust "Server" as S\n@0\nS is Idle\n@10\nS is Running\n@20\nS is Idle';
+	const result = convert(input);
+	assert(result.diagramType === 'timing', 'pipeline: type');
+	assert(result.xml.includes('<mxfile>'), 'pipeline: mxfile');
+	assert(result.xml.includes('UserObject'), 'pipeline: UserObject');
+	assert(result.xml.includes('Server'), 'pipeline: player label');
+	console.log('  Full pipeline: OK');
+}
+
+{
+	// Timing not misdetected as state
+	const input = 'robust "S" as S\n@0\nS is Idle\n@10\nS is Running';
+	const dt = detectDiagramType(input);
+	assert(dt === 'timing', 'timing-not-state: correct detection');
+	console.log('  Timing vs state detection: OK');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

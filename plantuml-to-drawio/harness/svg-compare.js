@@ -42,6 +42,11 @@ import { extractFromPlantUmlSvg as extractStateFromSvg } from './extract-plantum
 import { extractFromDrawioXml as extractStateFromDrawio } from './extract-drawio-xml-state.js';
 import { matchDiagrams as matchState, diffDiagrams as diffState, buildReport as buildStateReport } from './normalize-state.js';
 
+// ── Timing diagram extractors ─────────────────────────────────────────
+import { extractFromPlantUmlSvg as extractTimingFromSvg } from './extract-plantuml-svg-timing.js';
+import { extractFromDrawioXml as extractTimingFromDrawio } from './extract-drawio-xml-timing.js';
+import { matchDiagrams as matchTiming, diffDiagrams as diffTiming, buildReport as buildTimingReport } from './normalize-timing.js';
+
 // ── Extractor registry ────────────────────────────────────────────────────
 
 const extractors = {
@@ -79,6 +84,13 @@ const extractors = {
 		match: matchState,
 		diff: diffState,
 		buildReport: buildStateReport,
+	},
+	timing: {
+		extractFromSvg: extractTimingFromSvg,
+		extractFromDrawio: extractTimingFromDrawio,
+		match: matchTiming,
+		diff: diffTiming,
+		buildReport: buildTimingReport,
 	},
 };
 
@@ -125,7 +137,7 @@ if (isMain) {
 	const args = process.argv.slice(2);
 
 	if (args.length < 2) {
-		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase|component|state]');
+		console.error('Usage: node harness/svg-compare.js <reference.svg> <candidate.drawio> [--type sequence|class|usecase|component|state|timing]');
 		console.error('');
 		console.error('Compares a PlantUML SVG against a draw.io XML structurally.');
 		console.error('Output: JSON report to stdout.');
@@ -215,6 +227,20 @@ if (isMain) {
 				console.error(`  States (${cand.states.length}): ${cand.states.map(s => `${s.name}[${s.type}]`).join(', ')}`);
 				console.error(`  Composites: ${cand.composites.length}`);
 				console.error(`  Transitions: ${cand.transitions.length}`);
+				console.error(`  Notes: ${cand.notes.length}`);
+			} else if (diagramType === 'timing') {
+				console.error('── Reference (PlantUML SVG) ──');
+				console.error(`  Players (${ref.players.length}): ${ref.players.map(p => `${p.name}[${p.type}]`).join(', ')}`);
+				console.error(`  Constraints: ${ref.constraints.length}`);
+				console.error(`  Messages: ${ref.messages.length}`);
+				console.error(`  Highlights: ${ref.highlights.length}`);
+				console.error(`  Notes: ${ref.notes.length}`);
+				console.error('');
+				console.error('── Candidate (draw.io XML) ──');
+				console.error(`  Players (${cand.players.length}): ${cand.players.map(p => `${p.name}[${p.type}]`).join(', ')}`);
+				console.error(`  Constraints: ${cand.constraints.length}`);
+				console.error(`  Messages: ${cand.messages.length}`);
+				console.error(`  Highlights: ${cand.highlights.length}`);
 				console.error(`  Notes: ${cand.notes.length}`);
 			}
 			console.error('');

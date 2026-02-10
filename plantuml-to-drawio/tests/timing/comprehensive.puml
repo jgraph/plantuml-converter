@@ -1,0 +1,73 @@
+@startuml
+title Timing Diagram Comprehensive Test
+
+' ── All 6 Player Types ──
+robust "Web Server" as WS #LightBlue
+concise "Client" as C
+clock "System Clock" as clk with period 10 pulse 5
+binary "Enable" as EN
+analog "Voltage" between 0 and 5 as V
+rectangle "Status" as ST
+
+' ── State Definitions ──
+WS has Idle,Processing,Sending,Error
+C has Waiting,Requesting,Receiving
+
+' ── Absolute State Changes ──
+@0
+WS is Idle
+C is Waiting
+EN is low
+V is 0
+ST is Initializing
+
+@10
+WS is Processing
+C is Requesting
+EN is high
+V is 3.5
+
+@20
+WS is Sending
+C is Receiving
+V is 4.2
+
+@30
+WS is Idle
+C is Waiting
+EN is low
+V is 0
+ST is Complete
+
+' ── Player Context + Relative Time ──
+@WS
+40 is Error
++10 is Idle
+
+' ── Named Time Point ──
+@60 as :checkpoint
+
+' ── Time Constraints ──
+@0 <--> @10 : {10 ms}
+
+' ── Inter-player Messages ──
+C@10 --> WS@10 : request
+WS@20 --> C@20 : response
+
+' ── Highlights ──
+highlight 10 to 20 #Gold : busy period
+
+' ── Notes ──
+note top of WS : Server handles requests
+note bottom of C : Client state machine
+
+' ── Compact Player ──
+compact concise "Compact Client" as CC
+@0
+CC is Idle
+@15
+CC is Active
+@30
+CC is Idle
+
+@enduml

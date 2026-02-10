@@ -14,6 +14,7 @@
  *   - Class diagrams
  *   - Component / Deployment diagrams
  *   - Usecase diagrams
+ *   - Timing diagrams
  *   - State diagrams
  *   - Activity diagrams
  *   - Sequence diagrams
@@ -31,6 +32,8 @@ import { parseActivityDiagram } from './diagrams/activity/ActivityParser.js';
 import { emitActivityDiagram } from './diagrams/activity/ActivityEmitter.js';
 import { parseStateDiagram } from './diagrams/state/StateParser.js';
 import { emitStateDiagram } from './diagrams/state/StateEmitter.js';
+import { parseTimingDiagram } from './diagrams/timing/TimingParser.js';
+import { emitTimingDiagram } from './diagrams/timing/TimingEmitter.js';
 import { buildUserObject, buildDocument, createIdGenerator } from './MxBuilder.js';
 
 // ── Diagram type registry ──────────────────────────────────────────────────
@@ -165,6 +168,47 @@ diagramHandlers.set('usecase', {
 	},
 	parse: parseUsecaseDiagram,
 	emit: emitUsecaseDiagram
+});
+
+// Register timing diagram handler (before state — timing has highly distinctive keywords
+// like robust, concise, clock, binary, analog that don't overlap with any other type)
+diagramHandlers.set('timing', {
+	detect(text) {
+		// Explicit @starttiming
+		if (/@starttiming\b/i.test(text)) return true;
+
+		const lines = text.split('\n');
+		let score = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+
+			// Skip comments and directives
+			if (trimmed.startsWith("'") || /^@/.test(trimmed) || /^skinparam\b/i.test(trimmed)) continue;
+
+			// Player declarations — very strong signal, unique to timing
+			if (/^(?:compact\s+)?(?:robust|concise)\s+/i.test(trimmed)) { score += 3; continue; }
+			if (/^(?:compact\s+)?clock\s+.+with\s+period\b/i.test(trimmed)) { score += 3; continue; }
+			if (/^(?:compact\s+)?binary\s+/i.test(trimmed)) { score += 3; continue; }
+			if (/^(?:compact\s+)?analog\s+/i.test(trimmed)) { score += 3; continue; }
+
+			// rectangle is shared with component/deployment, lower weight
+			if (/^(?:compact\s+)?rectangle\s+/i.test(trimmed)) score++;
+
+			// highlight ... to ... pattern
+			if (/^highlight\s+\d.*\s+to\s+\d/i.test(trimmed)) { score += 2; continue; }
+
+			// <--> constraint pattern
+			if (/<-+>/.test(trimmed)) { score++; continue; }
+
+			// TIME is STATE pattern
+			if (/^\d+\s+is\s+/i.test(trimmed)) { score++; continue; }
+		}
+
+		return score >= 3;
+	},
+	parse: parseTimingDiagram,
+	emit: emitTimingDiagram
 });
 
 // Register state diagram handler (before activity — state uses --> arrows like activity,

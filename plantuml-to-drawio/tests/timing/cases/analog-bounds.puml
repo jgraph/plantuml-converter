@@ -1,0 +1,20 @@
+@startuml
+analog "Temperature" between 0 and 100 as T
+analog "Pressure" between -1 and 1 as P
+
+@0
+T is 20
+P is 0
+
+@10
+T is 45
+P is 0.5
+
+@20
+T is 80
+P is -0.3
+
+@30
+T is 35
+P is 0.1
+@enduml

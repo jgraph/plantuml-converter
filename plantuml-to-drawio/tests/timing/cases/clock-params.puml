@@ -1,0 +1,8 @@
+@startuml
+clock "Default Clock" as clk1 with period 10
+clock "With Pulse" as clk2 with period 20 pulse 5
+clock "With Offset" as clk3 with period 10 pulse 5 offset 3
+
+@0
+@40
+@enduml

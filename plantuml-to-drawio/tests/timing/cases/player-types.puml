@@ -1,0 +1,22 @@
+@startuml
+robust "Robust Player" as R
+concise "Concise Player" as C
+clock "Clock Signal" as clk with period 10
+binary "Binary Signal" as B
+analog "Analog Signal" between 0 and 10 as A
+rectangle "Rectangle Player" as Rect
+
+@0
+R is StateA
+C is Waiting
+B is low
+A is 0
+Rect is Init
+
+@20
+R is StateB
+C is Active
+B is high
+A is 7.5
+Rect is Done
+@enduml

@@ -1,0 +1,11 @@
+@startuml
+robust "Server" as S
+
+@S
+0 is Idle
++10 is Processing
++5 is Sending
++10 is Idle
++5 is Processing
++15 is Idle
+@enduml

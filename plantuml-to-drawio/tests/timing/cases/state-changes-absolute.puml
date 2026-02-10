@@ -1,0 +1,20 @@
+@startuml
+robust "Server" as S
+concise "Client" as C
+
+@0
+S is Idle
+C is Waiting
+
+@10
+S is Processing
+C is Requesting
+
+@25
+S is Sending
+C is Receiving
+
+@40
+S is Idle
+C is Waiting
+@enduml

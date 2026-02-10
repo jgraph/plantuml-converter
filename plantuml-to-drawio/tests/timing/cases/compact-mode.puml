@@ -1,0 +1,20 @@
+@startuml
+compact concise "Compact Concise" as CC
+compact robust "Compact Robust" as CR
+concise "Normal Concise" as NC
+
+@0
+CC is Idle
+CR is Off
+NC is Waiting
+
+@10
+CC is Active
+CR is On
+NC is Active
+
+@20
+CC is Idle
+CR is Off
+NC is Waiting
+@enduml

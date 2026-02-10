@@ -1,0 +1,26 @@
+@startuml
+robust "CPU" as cpu
+robust "Bus" as bus
+robust "Memory" as mem
+
+@0
+cpu is Idle
+bus is Free
+mem is Ready
+
+@10
+cpu is Fetch
+
+cpu@10 --> bus@12 : address
+bus@12 --> mem@14 : read
+mem@14 --> bus@18 : data
+bus@18 --> cpu@20 : response
+
+@20
+cpu is Execute
+bus is Free
+mem is Ready
+
+@30
+cpu is Idle
+@enduml

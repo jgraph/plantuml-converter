@@ -1,0 +1,20 @@
+@startuml
+robust "Web Server" as WS #LightBlue
+concise "Database" as DB #LightGreen
+robust "Load Balancer" as LB #Pink
+
+@0
+WS is Idle
+DB is Ready
+LB is Listening
+
+@10
+WS is Processing
+DB is Querying
+LB is Routing
+
+@20
+WS is Idle
+DB is Ready
+LB is Listening
+@enduml

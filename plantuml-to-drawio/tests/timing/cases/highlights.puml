@@ -1,0 +1,15 @@
+@startuml
+robust "Server" as S
+
+@0
+S is Idle
+
+@10
+S is Processing
+
+@30
+S is Idle
+
+highlight 10 to 30 #Gold : busy period
+highlight 0 to 10 #LightGreen
+@enduml

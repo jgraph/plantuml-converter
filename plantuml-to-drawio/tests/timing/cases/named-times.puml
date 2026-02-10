@@ -1,0 +1,14 @@
+@startuml
+robust "Server" as S
+
+@0
+S is Idle
+
+@10 as :start
+S is Processing
+
+@30 as :end
+S is Idle
+
+@:start <--> @:end : {processing}
+@enduml
